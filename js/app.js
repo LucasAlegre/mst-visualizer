@@ -67,23 +67,23 @@
   const PSEUDO = {
     prim: [
       {
-        head: '<b>procedure</b> <span class="proc">AlgoritmoPrimHeap</span>(<i>G</i> = (<i>V</i>, <i>E</i>), <i>s</i>)',
+        head: '<b>procedure</b> <span class="proc">PrimHeap</span>(<i>G</i> = (<i>V</i>, <i>E</i>), <i>s</i>)',
         lines: [
-          ['p1', 'meta', '<b>Entrada:</b> grafo conexo com pesos e vértice inicial <i>s</i>'],
+          ['p1', 'meta', '<b>Entrada:</b> grafo conexo <i>G</i> = (<i>V</i>, <i>E</i>) em listas de adjacência, custos <i>w</i>(<i>u</i>, <i>v</i>) e vértice inicial <i>s</i>'],
           ['p2', 'meta', '<b>Saída:</b> AGM <i>T</i>'],
-          ['p3', 0, '<b>for</b> cada <i>v</i> ∈ <i>V</i> <b>do</b>'],
-          ['p4', 1, '<i>key</i>[<i>v</i>] ← ∞, <i>pai</i>[<i>v</i>] ← ⊥'],
-          ['p5', 0, '<i>key</i>[<i>s</i>] ← 0, <i>T</i> ← ∅'],
-          ['p6', 0, '<i>H</i> ← heap mínima com todos os vértices de <i>V</i>, usando <i>key</i>[·]'],
-          ['p7', 0, '<b>while</b> <i>H</i> ≠ ∅ <b>do</b>'],
-          ['p8', 1, '<i>u</i> ← ExtraiMin(<i>H</i>)'],
-          ['p9', 1, '<b>if</b> <i>pai</i>[<i>u</i>] ≠ ⊥ <b>then</b>'],
-          ['p10', 2, '<i>T</i> ← <i>T</i> ∪ {(<i>pai</i>[<i>u</i>], <i>u</i>)}'],
-          ['p11', 1, '<b>for</b> cada aresta (<i>u</i>, <i>v</i>) ∈ <i>E</i> com <i>v</i> ∈ <i>H</i> <b>do</b>'],
-          ['p12', 2, '<b>if</b> <i>w</i>(<i>u</i>, <i>v</i>) &lt; <i>key</i>[<i>v</i>] <b>then</b>'],
-          ['p13', 3, '<i>pai</i>[<i>v</i>] ← <i>u</i>'],
-          ['p14', 3, '<i>key</i>[<i>v</i>] ← <i>w</i>(<i>u</i>, <i>v</i>)'],
-          ['p15', 3, 'DiminuiChave(<i>H</i>, <i>v</i>, <i>key</i>[<i>v</i>])'],
+          ['p3', 0, '<i>X</i> ← ∅, <i>T</i> ← ∅'],
+          ['p4', 0, '<i>H</i> ← heap contendo apenas a tripla (0, <i>s</i>, ⊥)'],
+          ['p5', 0, '<b>while</b> <i>H</i> não está vazio <b>do</b>'],
+          ['p6', 1, '(<i>c</i>, <i>v</i>, <i>p</i>) ← ExtractMin(<i>H</i>) <span class="pseudo-comment">▷ aresta (<i>p</i>, <i>v</i>) de custo <i>c</i></span>'],
+          ['p7', 1, '<b>if</b> <i>v</i> ∈ <i>X</i> <b>then</b>'],
+          ['p8', 2, '<b>continue</b> <span class="pseudo-comment">▷ tripla obsoleta: <i>v</i> já está na árvore</span>'],
+          ['p9', 1, 'Adicione <i>v</i> a <i>X</i>'],
+          ['p10', 1, '<b>if</b> <i>p</i> ≠ ⊥ <b>then</b>'],
+          ['p11', 2, '<i>T</i> ← <i>T</i> ∪ {(<i>p</i>, <i>v</i>)}'],
+          ['p12', 2, '<b>if</b> |<i>T</i>| = |<i>V</i>| − 1 <b>then</b>'],
+          ['p13', 3, '<b>Retorne</b> <i>T</i> <span class="pseudo-comment">▷ árvore completa</span>'],
+          ['p14', 1, '<b>for</b> cada aresta (<i>v</i>, <i>z</i>) ∈ <i>E</i> com <i>z</i> ∉ <i>X</i> <b>do</b>'],
+          ['p15', 2, 'Insert(<i>H</i>, (<i>w</i>(<i>v</i>, <i>z</i>), <i>z</i>, <i>v</i>))'],
           ['p16', 0, '<b>Retorne</b> <i>T</i>']
         ]
       }
@@ -126,11 +126,11 @@
 
   const LEGEND = {
     prim: [
-      ['node-x', 'em <i>X</i> (já extraído de <i>H</i>)'],
-      ['node-rest', 'em <i>V − X</i> (<i>key</i> provisória)'],
-      ['node-current', '<i>u</i> (extraído agora)'],
-      ['line-active', 'aresta avaliada'],
-      ['line-cand', '(<i>pai</i>[<i>v</i>], <i>v</i>): melhor ligação a <i>X</i>'],
+      ['node-x', 'em <i>X</i> (já na árvore)'],
+      ['node-rest', 'em <i>V − X</i>'],
+      ['node-current', '<i>v</i> (extraído agora)'],
+      ['line-active', 'aresta extraída / inserida'],
+      ['line-cand', 'candidata em <i>H</i>'],
       ['line-tree', 'árvore <i>T</i>']
     ],
     kruskal: [
@@ -157,108 +157,142 @@
     return { name: d.name, description: d.description, source, nodes, edges, order, adj };
   }
 
-  // ── Prim (pseudocódigo AlgoritmoPrimHeap do slide da aula 20) ────────────
+  // ── Prim (pseudocódigo PrimHeap do slide da aula 20) ─────────────────
+  // O heap guarda triplas (c, v, p): a aresta (p, v) de custo c, com p ∈ X.
+  // Começa só com (0, s, ⊥); quando v entra em X, insere as arestas de v para
+  // vértices fora de X. Triplas com v já em X são obsoletas e são descartadas.
+  // Empates seguem a ordem das tuplas em Python (heapq): (c, v, p).
+
+  const cmpTriple = (a, b) => {
+    if (a.c !== b.c) return a.c - b.c;
+    if (a.v !== b.v) return a.v < b.v ? -1 : 1;
+    if (a.p !== b.p) {
+      if (a.p === null) return -1;
+      if (b.p === null) return 1;
+      return a.p < b.p ? -1 : 1;
+    }
+    return a.seq - b.seq;
+  };
+  const tripleRef = t => `(${t.c}, ${nodeRef(t.v)}, ${t.p === null ? '⊥' : nodeRef(t.p)})`;
 
   function buildPrim(g) {
     const s = g.source;
     const ids = g.nodes.map(n => n.id);
-    const key = {};
-    const pai = {};
-    const paiEdge = {};
+    const n = ids.length;
     const X = [];
     const inX = new Set();
-    const H = new Set();
+    const cost = {};      // custo da aresta que ligou v à árvore
+    const pai = {};
+    const paiEdge = {};
+    const H = [];         // triplas { c, v, p, edge, seq }
+    let seq = 0;
     const T = [];
     let W = 0;
     const out = [];
 
     const snap = extra => out.push(Object.assign({
-      key: { ...key }, pai: { ...pai }, paiEdge: { ...paiEdge },
-      X: X.slice(), H: [...H], T: T.slice(), W,
-      wStar: null, target: null, edge: null, changed: null, old: null, extracted: null
+      X: X.slice(), cost: { ...cost }, pai: { ...pai }, paiEdge: { ...paiEdge },
+      H: H.map(t => ({ ...t })), T: T.slice(), W,
+      wStar: null, target: null, edge: null, inserted: null, extracted: null, stale: null
     }, extra));
 
     snap({
       phase: 'input',
       lines: ['p1', 'p2'],
-      msg: `<b>Entrada:</b> grafo não direcionado com ${ids.length} vértices e ${g.edges.length} arestas com custos, e vértice inicial <i>s</i> = ${nodeRef(s)}. ` +
+      msg: `<b>Entrada:</b> grafo não direcionado com ${n} vértices e ${g.edges.length} arestas com custos, e vértice inicial <i>s</i> = ${nodeRef(s)}. ` +
         `<b>Saída:</b> uma árvore geradora mínima <i>T</i>. <span class="tip">Clique em um vértice para mudar a origem.</span>`
     });
 
-    ids.forEach(id => { key[id] = id === s ? 0 : INF; H.add(id); });
+    H.push({ c: 0, v: s, p: null, edge: null, seq: seq++ });
     snap({
       phase: 'init',
-      lines: ['p3', 'p4', 'p5', 'p6'],
-      msg: `<b>Inicialização:</b> <i>key</i>[${nodeRef(s)}] = 0, <i>key</i>[<i>v</i>] = ∞ e <i>pai</i>[<i>v</i>] = ⊥ para os demais, <i>T</i> = ∅. ` +
-        `<i>H</i> contém <b>todos</b> os vértices, ordenados por <i>key</i>.`
+      lines: ['p3', 'p4'],
+      inserted: 0,
+      msg: `<b>Inicialização:</b> <i>X</i> = ∅ e <i>T</i> = ∅. <i>H</i> começa <b>apenas</b> com a tripla (0, ${nodeRef(s)}, ⊥).`
     });
 
-    const byKey = (a, b) => (key[a] - key[b]) || (g.order.get(a) - g.order.get(b));
-    while (H.size > 0) {
-      const u = [...H].sort(byKey)[0];
-      const k = key[u];
-      H.delete(u);
-      X.push(u);
-      inX.add(u);
-      let msg = `<b>ExtraiMin(<i>H</i>)</b> = ${nodeRef(u)} (<i>key</i> = ${fmt(k)}): ${nodeRef(u)} entra em <i>X</i>.`;
-      const lines = ['p7', 'p8', 'p9'];
-      let added = null;
-      if (pai[u] !== undefined) {
-        added = paiEdge[u];
-        T.push(added);
-        W += g.edges[added].w;
-        lines.push('p10');
-        msg += ` Como <i>pai</i>[${nodeRef(u)}] = ${nodeRef(pai[u])}, a aresta (${nodeRef(pai[u])}, ${nodeRef(u)}) de custo ${k} entra em <i>T</i> <span class="good">(<i>w</i>(<i>T</i>) = ${W})</span>.`;
-      } else if (k === INF) {
-        msg += ` <i>key</i> = ∞: ${nodeRef(u)} não está ligado a <i>X</i>, o grafo é desconexo.`;
-      } else {
-        msg += ` <i>pai</i>[${nodeRef(u)}] = ⊥: é a origem, nenhuma aresta entra em <i>T</i>.`;
-      }
-      snap({ phase: 'extract', lines, wStar: u, extracted: { v: u, k }, msg });
+    let complete = false;
+    while (H.length > 0) {
+      let k = 0;
+      H.forEach((t, idx) => { if (cmpTriple(t, H[k]) < 0) k = idx; });
+      const [t] = H.splice(k, 1);
+      const v = t.v;
 
-      const nbrs = g.adj.get(u).filter(a => H.has(a.to));
-      for (const { to: v, w, edge } of nbrs) {
-        const old = key[v];
-        const better = w < old;
-        if (better) {
-          key[v] = w;
-          pai[v] = u;
-          paiEdge[v] = edge;
-        }
-        const test = `Aresta (${nodeRef(u)}, ${nodeRef(v)}) com ${nodeRef(v)} ∈ <i>H</i>: <i>w</i> = ${w}`;
+      if (inX.has(v)) {
         snap({
-          phase: 'relax',
-          lines: better ? ['p11', 'p12', 'p13', 'p14', 'p15'] : ['p11', 'p12'],
-          wStar: u,
-          target: v,
+          phase: 'stale',
+          lines: ['p5', 'p6', 'p7', 'p8'],
+          stale: v,
+          extracted: { ...t, stale: true },
+          msg: `<b>ExtractMin(<i>H</i>)</b> = ${tripleRef(t)}. Como ${nodeRef(v)} já está em <i>X</i>, a tripla é <b>obsoleta</b> (a aresta formaria um ciclo): descartada (<b>continue</b>).`
+        });
+        continue;
+      }
+
+      inX.add(v);
+      X.push(v);
+      cost[v] = t.c;
+      const lines = ['p5', 'p6', 'p7', 'p9', 'p10'];
+      let msg = `<b>ExtractMin(<i>H</i>)</b> = ${tripleRef(t)}: ${nodeRef(v)} ∉ <i>X</i>, então ${nodeRef(v)} entra em <i>X</i>.`;
+      if (t.p !== null) {
+        pai[v] = t.p;
+        paiEdge[v] = t.edge;
+        T.push(t.edge);
+        W += t.c;
+        lines.push('p11');
+        msg += ` A aresta (${nodeRef(t.p)}, ${nodeRef(v)}) de custo ${t.c} entra em <i>T</i> <span class="good">(<i>w</i>(<i>T</i>) = ${W})</span>.`;
+      } else {
+        msg += ` <i>p</i> = ⊥: é a origem, nenhuma aresta entra em <i>T</i>.`;
+      }
+      snap({ phase: 'extract', lines, wStar: v, edge: t.edge, extracted: { ...t, stale: false }, msg });
+
+      if (T.length === n - 1) {
+        complete = true;
+        snap({
+          phase: 'done',
+          lines: ['p12', 'p13'],
+          msg: `<b>|<i>T</i>| = ${T.length} = |<i>V</i>| − 1: fim!</b> <i>T</i> é uma árvore geradora mínima de custo <b><i>w</i>(<i>T</i>) = ${W}</b>.` +
+            (H.length ? ` As ${H.length} triplas que restam em <i>H</i> nem precisam ser extraídas.` : '')
+        });
+        break;
+      }
+
+      for (const { to: z, w, edge } of g.adj.get(v)) {
+        if (inX.has(z)) continue;
+        const ins = { c: w, v: z, p: v, edge, seq: seq++ };
+        H.push(ins);
+        snap({
+          phase: 'insert',
+          lines: ['p14', 'p15'],
+          wStar: v,
+          target: z,
           edge,
-          changed: better ? v : null,
-          old,
-          msg: better
-            ? `${test} &lt; <i>key</i>[${nodeRef(v)}] = ${fmt(old)}, então <i>pai</i>[${nodeRef(v)}] = ${nodeRef(u)}, <i>key</i>[${nodeRef(v)}] = <b>${w}</b> e DiminuiChave. <span class="good">Atualizada!</span>`
-            : `${test} ≥ <i>key</i>[${nodeRef(v)}] = ${fmt(old)}: nada muda (${nodeRef(v)} já tem uma ligação mais barata com <i>X</i>).`
+          inserted: ins.seq,
+          msg: `Aresta (${nodeRef(v)}, ${nodeRef(z)}) de custo ${w} com ${nodeRef(z)} ∉ <i>X</i>: Insert(<i>H</i>, ${tripleRef(ins)}).`
         });
       }
 
-      if (H.size > 0) {
-        const skipped = g.adj.get(u).length - nbrs.length - (pai[u] !== undefined ? 1 : 0);
-        const summary = nbrs.length
-          ? `Todas as arestas de ${nodeRef(u)} para vértices em <i>H</i> foram avaliadas.`
-          : `${nodeRef(u)} não tem arestas para vértices em <i>H</i>.`;
+      if (H.length > 0) {
+        const skipped = g.adj.get(v).filter(a => inX.has(a.to)).length - (t.p !== null ? 1 : 0);
         snap({
           phase: 'pause',
-          lines: ['p7'],
-          msg: `${summary}${skipped > 0 ? ' Arestas para vértices já em <i>X</i> são ignoradas (formariam ciclo).' : ''} ` +
-            `<span class="tip"><i>H</i> não está vazio; o próximo passo é ExtraiMin(<i>H</i>). Qual vértice será extraído?</span>`
+          lines: ['p5'],
+          msg: `Todas as arestas de ${nodeRef(v)} para vértices fora de <i>X</i> foram inseridas em <i>H</i>.` +
+            (skipped > 0 ? ' Arestas para vértices já em <i>X</i> não são inseridas (formariam ciclo).' : '') +
+            ` <span class="tip"><i>H</i> não está vazio; o próximo passo é ExtractMin(<i>H</i>). Qual tripla será extraída?</span>`
         });
       }
     }
 
-    snap({
-      phase: 'done',
-      lines: ['p7', 'p16'],
-      msg: `<b><i>H</i> está vazio: fim!</b> <i>T</i> tem ${T.length} arestas e é uma árvore geradora mínima de custo <b><i>w</i>(<i>T</i>) = ${W}</b>.`
-    });
+    if (!complete) {
+      snap({
+        phase: 'done',
+        lines: ['p5', 'p16'],
+        msg: `<b><i>H</i> está vazio: fim!</b> ` + (T.length === n - 1
+          ? `<i>T</i> é uma árvore geradora mínima de custo <b><i>w</i>(<i>T</i>) = ${W}</b>.`
+          : `O grafo é desconexo: <i>T</i> é uma AGM só da componente de ${nodeRef(s)} (custo ${W}).`)
+      });
+    }
     return out;
   }
 
@@ -436,7 +470,7 @@
   }
 
   // Escolhe, ao redor de cada vértice, direções livres de arestas para o
-  // rótulo de key e para a etiqueta "origem".
+  // rótulo de custo e para a etiqueta "origem".
   const SPOTS = [-90, -45, -135, 0, 180, 45, 135, 90].map(deg => (deg * Math.PI) / 180);
 
   function freeDirections(g, n) {
@@ -534,10 +568,22 @@
     label.setAttribute('class', `weight ${kind}`);
   }
 
+  // Para cada v fora de X, a tripla não obsoleta mais barata em H (se houver).
+  function bestInHeap(state) {
+    const inX = new Set(state.X);
+    const best = {};
+    state.H.forEach(t => {
+      if (inX.has(t.v)) return;
+      if (!best[t.v] || cmpTriple(t, best[t.v]) < 0) best[t.v] = t;
+    });
+    return best;
+  }
+
   function renderPrimGraph(state) {
     const inX = new Set(state.X);
     const inT = new Set(state.T);
-    const cand = new Set(Object.entries(state.paiEdge).filter(([v]) => !inX.has(v)).map(([, e]) => e));
+    const cand = new Set(state.H.filter(t => t.edge !== null && !inX.has(t.v)).map(t => t.edge));
+    const best = bestInHeap(state);
     const started = state.phase !== 'input';
 
     graph.edges.forEach((e, i) => {
@@ -555,18 +601,20 @@
       if (inX.has(n.id)) classes.push('in-x');
       if (n.id === state.wStar) classes.push('current');
       if (n.id === state.target) classes.push('target');
-      if (n.id === state.changed) classes.push('changed');
+      if (n.id === state.stale) classes.push('stale');
       d.group.setAttribute('class', classes.join(' '));
       d.halo.setAttribute('class', inX.has(n.id) ? 'halo on' : 'halo');
       if (!started) {
         d.badge.setAttribute('class', 'badge hidden');
         return;
       }
-      let cls = '';
-      if (n.id === state.changed) cls = 'changed';
-      else if (n.id === state.wStar) cls = 'current';
-      else if (inX.has(n.id)) cls = 'in-x';
-      setBadge(d, fmt(state.key[n.id]), cls);
+      if (inX.has(n.id)) {
+        setBadge(d, String(state.cost[n.id]), n.id === state.wStar ? 'current' : 'in-x');
+      } else if (best[n.id]) {
+        setBadge(d, String(best[n.id].c), n.id === state.target ? 'changed' : '');
+      } else {
+        d.badge.setAttribute('class', 'badge hidden');
+      }
     });
   }
 
@@ -622,49 +670,55 @@
 
   function renderPrimSide(state) {
     ui.sideTitle1.innerHTML = 'Fila de prioridade <i>H</i>';
-    ui.sideSub1.innerHTML = 'vértices ainda fora de <i>X</i>, ordenados por <i>key</i> (o primeiro é o mínimo)';
-    ui.sideTitle2.innerHTML = 'Tabela <i>key</i> / <i>pai</i>';
-    ui.sideSub2.innerHTML = '<i>key</i>[<i>v</i>]: custo da aresta mais barata entre <i>v</i> e <i>X</i>; <i>pai</i>[<i>v</i>]: a outra ponta dela';
+    ui.sideSub1.innerHTML = 'triplas (<i>c</i>, <i>v</i>, <i>p</i>): aresta (<i>p</i>, <i>v</i>) de custo <i>c</i>, em ordem (o primeiro é o mínimo); triplas <span class="obsolete-text">cinza</span> são obsoletas';
+    ui.sideTitle2.innerHTML = 'Árvore <i>T</i>';
+    ui.sideSub2.innerHTML = 'para <i>v</i> ∈ <i>X</i>: a aresta que ligou <i>v</i> à árvore; para <i>v</i> ∉ <i>X</i>: a candidata mais barata em <i>H</i>';
 
+    const inX = new Set(state.X);
     if (state.phase === 'input') {
       ui.sideBody1.innerHTML = '<div class="heap"><p class="empty">ainda não inicializada</p></div>';
     } else {
-      const chip = (cls, v, k, title) =>
-        `<div class="${cls.join(' ')}" title="${title}"><span class="chip-id">${v}</span><span class="chip-key">${fmt(k)}</span></div>`;
+      const chip = (cls, t, title) =>
+        `<div class="${cls.join(' ')}" title="${title}"><span class="chip-id">${t.v}</span><span class="chip-key">${t.c}</span><span class="chip-via">${t.p === null ? '⊥' : `de ${t.p}`}</span></div>`;
       const chips = [];
-      if (state.extracted) chips.push(chip(['chip', 'leaving'], state.extracted.v, state.extracted.k, 'extraído agora'));
-      state.H.slice()
-        .sort((a, b) => (state.key[a] - state.key[b]) || (graph.order.get(a) - graph.order.get(b)))
-        .forEach((v, i) => {
-          const cls = ['chip'];
-          if (i === 0) cls.push('min');
-          if (v === state.changed) cls.push('changed');
-          if (v === state.target && v !== state.changed) cls.push('target');
-          chips.push(chip(cls, v, state.key[v], `key[${v}] = ${fmt(state.key[v])}`));
-        });
+      if (state.extracted) {
+        const t = state.extracted;
+        chips.push(chip(t.stale ? ['chip', 'leaving', 'discarded'] : ['chip', 'leaving'], t,
+          t.stale ? 'extraída agora: obsoleta, descartada' : 'extraída agora'));
+      }
+      state.H.slice().sort(cmpTriple).forEach((t, idx) => {
+        const cls = ['chip'];
+        const obsolete = inX.has(t.v);
+        if (idx === 0) cls.push('min');
+        if (obsolete) cls.push('obsolete');
+        if (t.seq === state.inserted) cls.push('changed');
+        chips.push(chip(cls, t, obsolete ? 'tripla obsoleta' : `(${t.c}, ${t.v}, ${t.p === null ? '⊥' : t.p})`));
+      });
       ui.sideBody1.innerHTML = `<div class="heap">${chips.length ? chips.join('') : '<p class="empty">vazia</p>'}</div>`;
     }
 
-    const inX = new Set(state.X);
+    const best = bestInHeap(state);
     const started = state.phase !== 'input';
     const rows = graph.nodes.map(n => {
       const id = n.id;
       const cls = [inX.has(id) ? 'in-x' : 'rest'];
       if (id === state.wStar) cls.push('current');
-      if (id === state.changed) cls.push('changed');
-      let k = '–';
+      else if (id === state.target) cls.push('changed');
       let p = '–';
-      let w = '';
-      if (started) {
-        k = id === state.changed
-          ? `<s>${fmt(state.old)}</s> <b>${fmt(state.key[id])}</b>`
-          : (inX.has(id) ? `<b>${fmt(state.key[id])}</b>` : fmt(state.key[id]));
+      let c = '–';
+      let e = '';
+      if (started && inX.has(id)) {
         p = state.pai[id] !== undefined ? state.pai[id] : '⊥';
-        if (state.pai[id] !== undefined) w = `${state.pai[id]}–${id}`;
+        c = `<b>${state.cost[id]}</b>`;
+        e = state.pai[id] !== undefined ? `${state.pai[id]}–${id}` : 'origem';
+      } else if (started && best[id]) {
+        p = `<span class="muted">${best[id].p}</span>`;
+        c = `<span class="muted">${best[id].c}</span>`;
+        e = `<span class="muted">candidata ${best[id].p}–${id}</span>`;
       }
-      return `<tr class="${cls.join(' ')}"><td class="col-v"><span class="dot"></span>${id}</td><td class="col-key">${k}</td><td class="col-pred">${p}</td><td class="col-path">${w}</td></tr>`;
+      return `<tr class="${cls.join(' ')}"><td class="col-v"><span class="dot"></span>${id}</td><td class="col-pred">${p}</td><td class="col-key">${c}</td><td class="col-path">${e}</td></tr>`;
     }).join('');
-    ui.sideBody2.innerHTML = `<table class="dist-table"><thead><tr><th>v</th><th>key</th><th>pai</th><th>aresta</th></tr></thead><tbody>${rows}</tbody></table>`;
+    ui.sideBody2.innerHTML = `<table class="dist-table"><thead><tr><th>v</th><th>pai</th><th>custo</th><th>aresta</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   function renderKruskalSide(state) {

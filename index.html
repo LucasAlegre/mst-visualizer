@@ -97,7 +97,7 @@
         <li><b>Automático</b> avança sozinho (tecla <kbd>A</kbd>); <b>Reiniciar</b> volta ao início (<kbd>Home</kbd>).</li>
         <li><b>Pseudocódigo</b> mostra a linha executada em cada passo (tecla <kbd>P</kbd>); é o mesmo dos slides.</li>
         <li><b>Grafos</b> carrega um exemplo ou gera um grafo aleatório conexo.</li>
-        <li><b>Prim:</b> os vértices em <i>X</i> (azuis) já foram extraídos do heap <i>H</i>; o número junto de cada vértice é <i>key</i>[<i>v</i>], o custo da aresta mais barata que o liga a <i>X</i>. No passo inicial, clique em um vértice para escolhê-lo como origem <i>s</i>.</li>
+        <li><b>Prim:</b> o heap <i>H</i> guarda triplas (<i>c</i>, <i>v</i>, <i>p</i>), a aresta (<i>p</i>, <i>v</i>) de custo <i>c</i>, e começa só com (0, <i>s</i>, ⊥). Quando <i>v</i> entra em <i>X</i> (azul), as arestas de <i>v</i> para fora de <i>X</i> são inseridas. Triplas <b>cinza</b> são obsoletas (<i>v</i> já está em <i>X</i>) e são descartadas quando saem. O número junto de cada vértice é o custo da aresta que o ligou à árvore (ou, fora de <i>X</i>, da candidata mais barata em <i>H</i>). No passo inicial, clique em um vértice para escolhê-lo como origem <i>s</i>.</li>
         <li><b>Kruskal:</b> as arestas são examinadas em ordem crescente de custo; a estrutura Union-Find (<i>pai</i>, <i>rank</i>) diz se as pontas estão na mesma componente. As componentes aparecem como manchas coloridas ao redor dos vértices.</li>
       </ul>
       <form method="dialog"><button class="btn primary" type="submit">Fechar</button></form>

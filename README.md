@@ -15,12 +15,12 @@ The tool was built to make algorithmic decisions visible through synchronized gr
 
 - **Prim / Kruskal switch** on the same graph (key <kbd>K</kbd>), so both algorithms can be compared side by side.
 - **Large graph in the center**:
-  - *Prim:* nodes in *X* (blue, already extracted from the heap) clearly separated from nodes in *V − X* (white), with *key*[*v*] next to each node; the extracted node (*u*) and the edge being evaluated are shown in orange, the best connection (*pai*[*v*], *v*) of each node to *X* is dashed and the tree *T* is solid.
+  - *Prim:* nodes in *X* (blue, already in the tree) clearly separated from nodes in *V − X* (white); the extracted node and the edge being extracted or inserted are shown in orange, candidate edges in the heap are dashed and the tree *T* is solid.
   - *Kruskal:* the current edge in orange, accepted edges (in *T*) in blue, rejected edges (they would close a cycle) dashed in red, and each Union-Find component as a colored region around its nodes.
 - **Data structures** in the side panel:
-  - *Prim:* priority queue *H* ordered by *key* and the *key* / *pai* table.
+  - *Prim:* priority queue *H* of (cost, *v*, parent) triples that starts with (0, *s*, ⊥) only, as in the slides: when *v* joins *X*, its edges to nodes outside *X* are inserted; triples whose node is already in *X* become **stale** (gray) and are discarded when extracted. Plus a table with the edge that connected each node to the tree.
   - *Kruskal:* edges in increasing order of cost (accepted, rejected, not examined) and the Union-Find table (*pai*, *rank*, root), showing path compression and union by rank.
-- **Pseudocode** (the same versions as the course slides: `AlgoritmoPrimHeap` and `KruskalUF` with `Find` and `Union`), toggled by a button, with the current line highlighted.
+- **Pseudocode** (the same versions as the course slides: `PrimHeap` and `KruskalUF` with `Find` and `Union`), toggled by a button, with the current line highlighted.
 - **Step-by-step execution**: forward, back, reset and auto-run with three speeds (keys <kbd>→</kbd> <kbd>←</kbd> <kbd>space</kbd> <kbd>A</kbd> <kbd>P</kbd> <kbd>K</kbd>).
 - **Example graphs** (including the one from lectures 20 and 21) and connected planar **random graphs**; with Prim, click a node on the initial step to make it the source.
 - Direct links to an algorithm/example/step: `?algo=kruskal&grafo=clrs&passo=5&pseudo=1` or `?algo=prim&grafo=aleatorio&n=8`.

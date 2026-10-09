@@ -510,3 +510,8 @@ kbd { font-family: var(--font); font-size: 0.8em; padding: 0.05rem 0.35rem; bord
 .uf-table tr.changed { background: var(--green-soft); }
 .uf-table tr.changed .col-key b, .uf-table tr.changed .col-pred b { color: var(--green); }
 .uf-table .col-path { white-space: nowrap; }
+
+/* Prim: tripla (c, v, p) no heap */
+.chip-via { font-size: 0.78rem; color: var(--muted); }
+.chip.obsolete .chip-via { color: var(--line-strong); }
+.dist-table .muted { color: var(--line-strong); font-weight: 400; }
