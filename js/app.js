@@ -74,16 +74,16 @@
           ['p3', 0, '<i>X</i> ← ∅, <i>T</i> ← ∅'],
           ['p4', 0, '<i>H</i> ← heap contendo apenas a tripla (0, <i>s</i>, ⊥)'],
           ['p5', 0, '<b>while</b> <i>H</i> não está vazio <b>do</b>'],
-          ['p6', 1, '(<i>c</i>, <i>v</i>, <i>p</i>) ← ExtractMin(<i>H</i>) <span class="pseudo-comment">▷ aresta (<i>p</i>, <i>v</i>) de custo <i>c</i></span>'],
+          ['p6', 1, '(<i>c</i>, <i>v</i>, <i>u</i>) ← ExtractMin(<i>H</i>) <span class="pseudo-comment">▷ aresta (<i>u</i>, <i>v</i>) de custo <i>c</i></span>'],
           ['p7', 1, '<b>if</b> <i>v</i> ∈ <i>X</i> <b>then</b>'],
           ['p8', 2, '<b>continue</b> <span class="pseudo-comment">▷ tripla obsoleta: <i>v</i> já está na árvore</span>'],
           ['p9', 1, 'Adicione <i>v</i> a <i>X</i>'],
-          ['p10', 1, '<b>if</b> <i>p</i> ≠ ⊥ <b>then</b>'],
-          ['p11', 2, '<i>T</i> ← <i>T</i> ∪ {(<i>p</i>, <i>v</i>)}'],
+          ['p10', 1, '<b>if</b> <i>u</i> ≠ ⊥ <b>then</b>'],
+          ['p11', 2, '<i>T</i> ← <i>T</i> ∪ {(<i>u</i>, <i>v</i>)}'],
           ['p12', 2, '<b>if</b> |<i>T</i>| = |<i>V</i>| − 1 <b>then</b>'],
           ['p13', 3, '<b>Retorne</b> <i>T</i> <span class="pseudo-comment">▷ árvore completa</span>'],
-          ['p14', 1, '<b>for</b> cada aresta (<i>v</i>, <i>z</i>) ∈ <i>E</i> com <i>z</i> ∉ <i>X</i> <b>do</b>'],
-          ['p15', 2, 'Insert(<i>H</i>, (<i>w</i>(<i>v</i>, <i>z</i>), <i>z</i>, <i>v</i>))'],
+          ['p14', 1, '<b>for</b> cada aresta (<i>v</i>, <i>x</i>) ∈ <i>E</i> com <i>x</i> ∉ <i>X</i> <b>do</b>'],
+          ['p15', 2, 'Insert(<i>H</i>, (<i>w</i>(<i>v</i>, <i>x</i>), <i>x</i>, <i>v</i>))'],
           ['p16', 0, '<b>Retorne</b> <i>T</i>']
         ]
       }
@@ -158,10 +158,10 @@
   }
 
   // ── Prim (pseudocódigo PrimHeap do slide da aula 20) ─────────────────
-  // O heap guarda triplas (c, v, p): a aresta (p, v) de custo c, com p ∈ X.
+  // O heap guarda triplas (c, v, u): a aresta (u, v) de custo c, com u ∈ X.
   // Começa só com (0, s, ⊥); quando v entra em X, insere as arestas de v para
   // vértices fora de X. Triplas com v já em X são obsoletas e são descartadas.
-  // Empates seguem a ordem das tuplas em Python (heapq): (c, v, p).
+  // Empates seguem a ordem das tuplas em Python (heapq): (c, v, u).
 
   const cmpTriple = (a, b) => {
     if (a.c !== b.c) return a.c - b.c;
@@ -242,7 +242,7 @@
         lines.push('p11');
         msg += ` A aresta (${nodeRef(t.p)}, ${nodeRef(v)}) de custo ${t.c} entra em <i>T</i> <span class="good">(<i>w</i>(<i>T</i>) = ${W})</span>.`;
       } else {
-        msg += ` <i>p</i> = ⊥: é a origem, nenhuma aresta entra em <i>T</i>.`;
+        msg += ` <i>u</i> = ⊥: é a origem, nenhuma aresta entra em <i>T</i>.`;
       }
       snap({ phase: 'extract', lines, wStar: v, edge: t.edge, extracted: { ...t, stale: false }, msg });
 
@@ -670,7 +670,7 @@
 
   function renderPrimSide(state) {
     ui.sideTitle1.innerHTML = 'Fila de prioridade <i>H</i>';
-    ui.sideSub1.innerHTML = 'triplas (<i>c</i>, <i>v</i>, <i>p</i>): aresta (<i>p</i>, <i>v</i>) de custo <i>c</i>, em ordem (o primeiro é o mínimo); triplas <span class="obsolete-text">cinza</span> são obsoletas';
+    ui.sideSub1.innerHTML = 'triplas (<i>c</i>, <i>v</i>, <i>u</i>): aresta (<i>u</i>, <i>v</i>) de custo <i>c</i>, em ordem (o primeiro é o mínimo); triplas <span class="obsolete-text">cinza</span> são obsoletas';
     ui.sideTitle2.innerHTML = 'Árvore <i>T</i>';
     ui.sideSub2.innerHTML = 'para <i>v</i> ∈ <i>X</i>: a aresta que ligou <i>v</i> à árvore; para <i>v</i> ∉ <i>X</i>: a candidata mais barata em <i>H</i>';
 
