@@ -1,1692 +1,890 @@
+// Visualização dos algoritmos de Prim (com heap) e de Kruskal (com Union-Find)
+// para árvore geradora mínima. Toda a execução é pré-calculada como uma lista
+// de passos (snapshots); avançar/voltar apenas escolhe qual passo desenhar.
 (function () {
   'use strict';
 
-  /* ========================================================================
-   * Core logic (pure functions, no DOM). Exported for Node-based testing.
-   * ====================================================================== */
-
+  const { EXAMPLES, randomGraph } = window.MSTGraphs;
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const R = 27;       // raio dos vértices (unidades do SVG)
   const INF = Infinity;
+  const COMP_COLORS = 8;
 
-  function compareLabels(a, b) {
-    return String(a).localeCompare(String(b), 'en', { numeric: true });
-  }
-
-  function formatValue(value) {
-    if (value === INF) return '∞';
-    if (value === undefined || value === null) return '⊥';
-    return String(value);
-  }
-
-  function edgeLabel(edge, from) {
-    if (from && edge.target === from) return `${edge.target}–${edge.source}`;
-    return `${edge.source}–${edge.target}`;
-  }
-
-  function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-  }
-
-  const exampleGraphs = {
-    aula: {
-      label: 'Lecture Example (A–G)',
-      graph: {
-        start: 'A',
-        nodes: [
-          { id: 'A', x: 1, y: 0 },
-          { id: 'B', x: 3, y: 0 },
-          { id: 'C', x: 0, y: 1 },
-          { id: 'D', x: 2, y: 1 },
-          { id: 'E', x: 4, y: 1 },
-          { id: 'F', x: 1, y: 2 },
-          { id: 'G', x: 3, y: 2 }
-        ],
-        edges: [
-          { source: 'A', target: 'B', weight: 1 },
-          { source: 'C', target: 'A', weight: 1 },
-          { source: 'C', target: 'D', weight: 2 },
-          { source: 'C', target: 'F', weight: 3 },
-          { source: 'D', target: 'A', weight: 2 },
-          { source: 'D', target: 'B', weight: 3 },
-          { source: 'D', target: 'E', weight: 5 },
-          { source: 'D', target: 'F', weight: 4 },
-          { source: 'D', target: 'G', weight: 5 },
-          { source: 'E', target: 'B', weight: 4 },
-          { source: 'E', target: 'G', weight: 2 },
-          { source: 'F', target: 'G', weight: 6 }
-        ]
-      }
-    },
-    clrs: {
-      label: 'CLRS Classic (a–i)',
-      graph: {
-        start: 'a',
-        nodes: [
-          { id: 'a', x: 0, y: 1 },
-          { id: 'b', x: 1, y: 0 },
-          { id: 'c', x: 2, y: 0 },
-          { id: 'd', x: 3, y: 0 },
-          { id: 'e', x: 4, y: 1 },
-          { id: 'f', x: 3, y: 2 },
-          { id: 'g', x: 2, y: 2 },
-          { id: 'h', x: 1, y: 2 },
-          { id: 'i', x: 1.55, y: 1 }
-        ],
-        edges: [
-          { source: 'a', target: 'b', weight: 4 },
-          { source: 'a', target: 'h', weight: 8 },
-          { source: 'b', target: 'c', weight: 8 },
-          { source: 'b', target: 'h', weight: 11 },
-          { source: 'c', target: 'd', weight: 7 },
-          { source: 'c', target: 'f', weight: 4 },
-          { source: 'c', target: 'i', weight: 2 },
-          { source: 'd', target: 'e', weight: 9 },
-          { source: 'd', target: 'f', weight: 14 },
-          { source: 'e', target: 'f', weight: 10 },
-          { source: 'f', target: 'g', weight: 2 },
-          { source: 'g', target: 'h', weight: 1 },
-          { source: 'g', target: 'i', weight: 6 },
-          { source: 'h', target: 'i', weight: 7 }
-        ]
-      }
-    },
-    ties: {
-      label: 'Equal Weights (several MSTs)',
-      graph: {
-        start: 'A',
-        nodes: [
-          { id: 'A', x: 0, y: 0 },
-          { id: 'B', x: 2, y: 0 },
-          { id: 'C', x: 2, y: 2 },
-          { id: 'D', x: 0, y: 2 },
-          { id: 'E', x: 1, y: 1 }
-        ],
-        edges: [
-          { source: 'A', target: 'B', weight: 1 },
-          { source: 'B', target: 'C', weight: 1 },
-          { source: 'C', target: 'D', weight: 1 },
-          { source: 'D', target: 'A', weight: 1 },
-          { source: 'E', target: 'A', weight: 2 },
-          { source: 'E', target: 'B', weight: 2 },
-          { source: 'E', target: 'C', weight: 2 },
-          { source: 'E', target: 'D', weight: 2 }
-        ]
-      }
-    },
-    sparse: {
-      label: 'Sparse Network (A–H)',
-      graph: {
-        start: 'A',
-        nodes: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'],
-        edges: [
-          { source: 'A', target: 'B', weight: 7 },
-          { source: 'A', target: 'D', weight: 5 },
-          { source: 'B', target: 'C', weight: 8 },
-          { source: 'B', target: 'D', weight: 9 },
-          { source: 'B', target: 'E', weight: 7 },
-          { source: 'C', target: 'E', weight: 5 },
-          { source: 'D', target: 'E', weight: 15 },
-          { source: 'D', target: 'F', weight: 6 },
-          { source: 'E', target: 'F', weight: 8 },
-          { source: 'E', target: 'G', weight: 9 },
-          { source: 'F', target: 'G', weight: 11 },
-          { source: 'G', target: 'H', weight: 3 },
-          { source: 'F', target: 'H', weight: 12 }
-        ]
-      }
-    }
+  const $ = id => document.getElementById(id);
+  const ui = {
+    layout: $('layout'),
+    svg: $('graph'),
+    title: $('title'),
+    graphName: $('graphName'),
+    sets: $('sets'),
+    legend: $('legend'),
+    sideTitle1: $('sideTitle1'),
+    sideSub1: $('sideSub1'),
+    sideBody1: $('sideBody1'),
+    sideTitle2: $('sideTitle2'),
+    sideSub2: $('sideSub2'),
+    sideBody2: $('sideBody2'),
+    pseudo: $('pseudo'),
+    message: $('message'),
+    stepCounter: $('stepCounter'),
+    progressBar: $('progressBar'),
+    pseudoPanel: $('pseudoPanel'),
+    pseudoBtn: $('pseudoBtn'),
+    primBtn: $('primBtn'),
+    kruskalBtn: $('kruskalBtn'),
+    graphsBtn: $('graphsBtn'),
+    graphsMenu: $('graphsMenu'),
+    exampleList: $('exampleList'),
+    nodeCount: $('nodeCount'),
+    nodeCountValue: $('nodeCountValue'),
+    randomBtn: $('randomBtn'),
+    helpBtn: $('helpBtn'),
+    helpDialog: $('helpDialog'),
+    resetBtn: $('resetBtn'),
+    prevBtn: $('prevBtn'),
+    nextBtn: $('nextBtn'),
+    autoBtn: $('autoBtn'),
+    speedSelect: $('speedSelect')
   };
 
-  const DEFAULT_EXAMPLE = 'aula';
+  let algo = 'prim';    // 'prim' ou 'kruskal'
+  let def = null;       // definição do grafo atual (para trocar de algoritmo)
+  let graph = null;     // grafo normalizado
+  let steps = [];       // snapshots da execução
+  let current = 0;      // passo exibido
+  let timer = null;     // execução automática
+  let dom = null;       // elementos SVG do grafo atual
 
-  /**
-   * Validates a graph definition and returns {start, nodes:[{id,x?,y?}], edges:[{source,target,weight}]}.
-   * Positions are kept as given (any coordinate system); layout is handled separately.
-   */
-  function normalizeGraphDefinition(definition) {
-    if (!definition || typeof definition !== 'object') {
-      throw new Error('Graph definition must be a JSON object.');
-    }
+  const fmt = value => (value === INF ? '∞' : String(value));
+  const nodeRef = id => `<span class="ref">${id}</span>`;
+  const edgeName = e => `${e.u}–${e.v}`;
+  const edgeRef = e => `(${nodeRef(e.u)}, ${nodeRef(e.v)})`;
+  const math = s => `<i>${s}</i>`;
 
-    if (!Array.isArray(definition.edges) || definition.edges.length === 0) {
-      throw new Error('Graph must include a non-empty "edges" array.');
-    }
+  // ── Pseudocódigos (os mesmos dos slides das aulas 20 e 21) ───────────────
+  // Cada linha: [id, indentação ou 'meta', html]
 
-    const seenPairs = new Set();
-    const edgeList = definition.edges.map((edge, index) => {
-      if (!edge || typeof edge !== 'object') {
-        throw new Error(`Edge at index ${index} is not valid.`);
+  const PSEUDO = {
+    prim: [
+      {
+        head: '<b>procedure</b> <span class="proc">AlgoritmoPrimHeap</span>(<i>G</i> = (<i>V</i>, <i>E</i>), <i>s</i>)',
+        lines: [
+          ['p1', 'meta', '<b>Entrada:</b> grafo conexo com pesos e vértice inicial <i>s</i>'],
+          ['p2', 'meta', '<b>Saída:</b> AGM <i>T</i>'],
+          ['p3', 0, '<b>for</b> cada <i>v</i> ∈ <i>V</i> <b>do</b>'],
+          ['p4', 1, '<i>key</i>[<i>v</i>] ← ∞, <i>pai</i>[<i>v</i>] ← ⊥'],
+          ['p5', 0, '<i>key</i>[<i>s</i>] ← 0, <i>T</i> ← ∅'],
+          ['p6', 0, '<i>H</i> ← heap mínima com todos os vértices de <i>V</i>, usando <i>key</i>[·]'],
+          ['p7', 0, '<b>while</b> <i>H</i> ≠ ∅ <b>do</b>'],
+          ['p8', 1, '<i>u</i> ← ExtraiMin(<i>H</i>)'],
+          ['p9', 1, '<b>if</b> <i>pai</i>[<i>u</i>] ≠ ⊥ <b>then</b>'],
+          ['p10', 2, '<i>T</i> ← <i>T</i> ∪ {(<i>pai</i>[<i>u</i>], <i>u</i>)}'],
+          ['p11', 1, '<b>for</b> cada aresta (<i>u</i>, <i>v</i>) ∈ <i>E</i> com <i>v</i> ∈ <i>H</i> <b>do</b>'],
+          ['p12', 2, '<b>if</b> <i>w</i>(<i>u</i>, <i>v</i>) &lt; <i>key</i>[<i>v</i>] <b>then</b>'],
+          ['p13', 3, '<i>pai</i>[<i>v</i>] ← <i>u</i>'],
+          ['p14', 3, '<i>key</i>[<i>v</i>] ← <i>w</i>(<i>u</i>, <i>v</i>)'],
+          ['p15', 3, 'DiminuiChave(<i>H</i>, <i>v</i>, <i>key</i>[<i>v</i>])'],
+          ['p16', 0, '<b>Retorne</b> <i>T</i>']
+        ]
       }
-
-      const source = String(edge.source ?? '').trim();
-      const target = String(edge.target ?? '').trim();
-      const weight = Number(edge.weight);
-
-      if (!source || !target) {
-        throw new Error(`Edge at index ${index} must define source and target.`);
+    ],
+    kruskal: [
+      {
+        head: '<b>procedure</b> <span class="proc">KruskalUF</span>(<i>G</i> = (<i>V</i>, <i>E</i>), <i>c</i>)',
+        lines: [
+          ['k1', 0, '<i>T</i> ← ∅'],
+          ['k2', 0, 'ordene <i>E</i> em ordem crescente de custo'],
+          ['k3', 0, 'Inicialize(<i>V</i>) <span class="pseudo-comment">▷ um conjunto por vértice</span>'],
+          ['k4', 0, '<b>for</b> cada (<i>u</i>, <i>v</i>) ∈ <i>E</i>, na ordem escolhida <b>do</b>'],
+          ['k5', 1, '<b>if</b> Find(<i>u</i>) ≠ Find(<i>v</i>) <b>then</b>'],
+          ['k6', 2, '<i>T</i> ← <i>T</i> ∪ {(<i>u</i>, <i>v</i>)}'],
+          ['k7', 2, 'Union(<i>u</i>, <i>v</i>)'],
+          ['k8', 1, '<b>if</b> |<i>T</i>| = |<i>V</i>| − 1 <b>then</b>'],
+          ['k9', 2, '<b>Retorne</b> <i>T</i>'],
+          ['k10', 0, '<b>Retorne</b> <i>T</i>']
+        ]
+      },
+      {
+        head: '<b>procedure</b> <span class="proc">Find</span>(<i>v</i>) <span class="pseudo-comment">▷ com compressão</span>',
+        lines: [
+          ['f1', 0, '<b>if</b> <i>pai</i>[<i>v</i>] ≠ <i>v</i> <b>then</b>'],
+          ['f2', 1, '<i>pai</i>[<i>v</i>] ← Find(<i>pai</i>[<i>v</i>])'],
+          ['f3', 0, '<b>Retorne</b> <i>pai</i>[<i>v</i>]']
+        ]
+      },
+      {
+        head: '<b>procedure</b> <span class="proc">Union</span>(<i>u</i>, <i>v</i>) <span class="pseudo-comment">▷ por rank</span>',
+        lines: [
+          ['u1', 0, '<i>r</i> ← Find(<i>u</i>); <i>s</i> ← Find(<i>v</i>)'],
+          ['u2', 0, '<b>if</b> <i>rank</i>[<i>r</i>] &lt; <i>rank</i>[<i>s</i>] <b>then</b> troque <i>r</i> e <i>s</i>'],
+          ['u3', 0, '<i>pai</i>[<i>s</i>] ← <i>r</i>'],
+          ['u4', 0, '<b>if</b> <i>rank</i>[<i>r</i>] = <i>rank</i>[<i>s</i>] <b>then</b> <i>rank</i>[<i>r</i>] ← <i>rank</i>[<i>r</i>] + 1']
+        ]
       }
-      if (source === target) {
-        throw new Error(`Edge ${source}–${target} is a self-loop; self-loops are not allowed.`);
-      }
-      if (edge.weight === undefined || edge.weight === null || edge.weight === '' || !Number.isFinite(weight)) {
-        throw new Error(`Edge ${source}–${target} must have a numeric weight.`);
-      }
+    ]
+  };
 
-      const pairKey = [source, target].sort().join('\u0000');
-      if (seenPairs.has(pairKey)) {
-        throw new Error(`Duplicate edge ${source}–${target}: the graph is undirected, so each pair may appear only once.`);
-      }
-      seenPairs.add(pairKey);
+  const LEGEND = {
+    prim: [
+      ['node-x', 'em <i>X</i> (já extraído de <i>H</i>)'],
+      ['node-rest', 'em <i>V − X</i> (<i>key</i> provisória)'],
+      ['node-current', '<i>u</i> (extraído agora)'],
+      ['line-active', 'aresta avaliada'],
+      ['line-cand', '(<i>pai</i>[<i>v</i>], <i>v</i>): melhor ligação a <i>X</i>'],
+      ['line-tree', 'árvore <i>T</i>']
+    ],
+    kruskal: [
+      ['line-active', 'aresta examinada'],
+      ['line-tree', 'aceita (em <i>T</i>)'],
+      ['line-rej', 'rejeitada (formaria ciclo)'],
+      ['comp', 'componente (conjunto do Union-Find)']
+    ]
+  };
 
-      return { source, target, weight };
+  // ── Grafo ────────────────────────────────────────────────────────────────
+
+  function normalize(d) {
+    const nodes = d.nodes.map(n => ({ ...n }));
+    const edges = d.edges.map(([u, v, w, t]) => ({ u, v, w, t: t == null ? 0.5 : t }));
+    const order = new Map(nodes.map((n, i) => [n.id, i]));
+    const adj = new Map(nodes.map(n => [n.id, []]));
+    edges.forEach((e, i) => {
+      adj.get(e.u).push({ to: e.v, w: e.w, edge: i });
+      adj.get(e.v).push({ to: e.u, w: e.w, edge: i });
     });
-
-    const nodeMap = new Map();
-    if (Array.isArray(definition.nodes)) {
-      definition.nodes.forEach((rawNode, index) => {
-        if (typeof rawNode === 'string' || typeof rawNode === 'number') {
-          const id = String(rawNode).trim();
-          if (!id) throw new Error(`Node at index ${index} is empty.`);
-          nodeMap.set(id, { id });
-          return;
-        }
-
-        if (!rawNode || typeof rawNode !== 'object') {
-          throw new Error(`Node at index ${index} is not valid.`);
-        }
-
-        const id = String(rawNode.id ?? '').trim();
-        if (!id) throw new Error(`Node at index ${index} must include an id.`);
-
-        const x = Number(rawNode.x);
-        const y = Number(rawNode.y);
-        const hasPos = rawNode.x !== undefined && rawNode.y !== undefined && Number.isFinite(x) && Number.isFinite(y);
-        nodeMap.set(id, hasPos ? { id, x, y } : { id });
-      });
-    }
-
-    edgeList.forEach(edge => {
-      if (!nodeMap.has(edge.source)) nodeMap.set(edge.source, { id: edge.source });
-      if (!nodeMap.has(edge.target)) nodeMap.set(edge.target, { id: edge.target });
-    });
-
-    const nodeList = Array.from(nodeMap.values());
-    if (nodeList.length < 2) {
-      throw new Error('Graph must contain at least two nodes.');
-    }
-
-    const requestedStart = definition.start === undefined || definition.start === null
-      ? ''
-      : String(definition.start).trim();
-    const start = requestedStart && nodeMap.has(requestedStart) ? requestedStart : nodeList[0].id;
-
-    return { start, nodes: nodeList, edges: edgeList };
+    adj.forEach(list => list.sort((a, b) => order.get(a.to) - order.get(b.to)));
+    const source = order.has(d.source) ? d.source : nodes[0].id;
+    return { name: d.name, description: d.description, source, nodes, edges, order, adj };
   }
 
-  function buildAdjacency(nodeIds, edgeList) {
-    const adjacency = {};
-    nodeIds.forEach(id => {
-      adjacency[id] = [];
-    });
-    edgeList.forEach((edge, index) => {
-      adjacency[edge.source].push({ node: edge.target, weight: edge.weight, edge: index });
-      adjacency[edge.target].push({ node: edge.source, weight: edge.weight, edge: index });
-    });
-    Object.keys(adjacency).forEach(id => {
-      adjacency[id].sort((a, b) => compareLabels(a.node, b.node) || a.edge - b.edge);
-    });
-    return adjacency;
-  }
+  // ── Prim (pseudocódigo AlgoritmoPrimHeap do slide da aula 20) ────────────
 
-  function isConnected(graphDef) {
-    const ids = graphDef.nodes.map(n => (typeof n === 'string' ? n : n.id));
-    if (ids.length === 0) return true;
-    const adjacency = buildAdjacency(ids, graphDef.edges);
-    const seen = new Set([ids[0]]);
-    const stack = [ids[0]];
-    while (stack.length > 0) {
-      const u = stack.pop();
-      adjacency[u].forEach(({ node }) => {
-        if (!seen.has(node)) {
-          seen.add(node);
-          stack.push(node);
-        }
-      });
-    }
-    return seen.size === ids.length;
-  }
-
-  /**
-   * Layered (BFS) layout adapted from the Dijkstra visualizer: the start node on the left,
-   * one column per BFS level. Returns normalized coordinates in [0, 1].
-   */
-  function computeLayeredLayout(nodeIds, edgeList, startId) {
-    const adjacency = {};
-    nodeIds.forEach(id => {
-      adjacency[id] = new Set();
-    });
-    edgeList.forEach(edge => {
-      if (adjacency[edge.source] && adjacency[edge.target]) {
-        adjacency[edge.source].add(edge.target);
-        adjacency[edge.target].add(edge.source);
-      }
-    });
-
-    const levels = new Map();
-    const root = adjacency[startId] ? startId : nodeIds[0];
-    const queue = [root];
-    levels.set(root, 0);
-    while (queue.length > 0) {
-      const current = queue.shift();
-      const currentLevel = levels.get(current);
-      Array.from(adjacency[current]).sort(compareLabels).forEach(next => {
-        if (!levels.has(next)) {
-          levels.set(next, currentLevel + 1);
-          queue.push(next);
-        }
-      });
-    }
-
-    let maxLevel = 0;
-    levels.forEach(level => {
-      maxLevel = Math.max(maxLevel, level);
-    });
-    nodeIds.forEach(id => {
-      if (!levels.has(id)) {
-        maxLevel += 1;
-        levels.set(id, maxLevel);
-      }
-    });
-
-    const grouped = new Map();
-    nodeIds.forEach(id => {
-      const level = levels.get(id);
-      if (!grouped.has(level)) grouped.set(level, []);
-      grouped.get(level).push(id);
-    });
-
-    const safeMaxLevel = Math.max(maxLevel, 1);
-    const layout = {};
-    const sortedLevels = Array.from(grouped.keys()).sort((a, b) => a - b);
-
-    sortedLevels.forEach(level => {
-      let ids = grouped.get(level).sort(compareLabels);
-
-      // Order each column by the average position of already placed neighbors (fewer crossings).
-      if (level > 0) {
-        const barycenter = id => {
-          const placed = Array.from(adjacency[id]).filter(n => layout[n]);
-          if (placed.length === 0) return 0.5;
-          return placed.reduce((sum, n) => sum + layout[n].y, 0) / placed.length;
-        };
-        ids = ids
-          .map(id => ({ id, b: barycenter(id) }))
-          .sort((a, b) => a.b - b.b || compareLabels(a.id, b.id))
-          .map(item => item.id);
-      }
-
-      const baseX = maxLevel === 0 ? 0.5 : level / safeMaxLevel;
-      const stagger = ids.length > 2 ? Math.min(0.06, 0.28 / safeMaxLevel) : 0;
-
-      ids.forEach((id, index) => {
-        const baseY = ids.length === 1 ? 0.5 : index / (ids.length - 1);
-        const seed = Array.from(id).reduce((sum, char) => sum + char.charCodeAt(0), 0);
-        const jitter = id === root ? 0 : ((seed % 11) - 5) / 400;
-        const offset = stagger === 0 ? 0 : (index % 2 === 0 ? -stagger : stagger);
-        layout[id] = {
-          x: clamp(baseX + offset, 0, 1),
-          y: clamp(baseY + jitter, 0, 1)
-        };
-      });
-    });
-
-    return layout;
-  }
-
-  /** Maps arbitrary coordinates (or a computed layout) to normalized [0, 1] positions. */
-  function computeNormalizedPositions(normalized) {
-    const allPositioned = normalized.nodes.every(n => Number.isFinite(n.x) && Number.isFinite(n.y));
-    let raw;
-    if (allPositioned) {
-      raw = {};
-      normalized.nodes.forEach(n => {
-        raw[n.id] = { x: n.x, y: n.y };
-      });
-    } else {
-      raw = computeLayeredLayout(normalized.nodes.map(n => n.id), normalized.edges, normalized.start);
-    }
-
-    const xs = Object.values(raw).map(p => p.x);
-    const ys = Object.values(raw).map(p => p.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const result = {};
-    Object.entries(raw).forEach(([id, p]) => {
-      result[id] = {
-        x: maxX > minX ? (p.x - minX) / (maxX - minX) : 0.5,
-        y: maxY > minY ? (p.y - minY) / (maxY - minY) : 0.5
-      };
-    });
-    return result;
-  }
-
-  /**
-   * Random connected graph: a random spanning tree (each vertex, in random order, attaches to a
-   * random earlier vertex) plus every other pair with probability `density`.
-   */
-  function generateRandomGraph(nodeCount, density, rng = Math.random) {
-    const makeNodeId = index => (index < 26 ? String.fromCharCode(65 + index) : `N${index + 1}`);
-    const ids = [];
-    for (let i = 0; i < nodeCount; i++) ids.push(makeNodeId(i));
-
-    const order = ids.slice();
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [order[i], order[j]] = [order[j], order[i]];
-    }
-
-    const pairKey = (a, b) => (compareLabels(a, b) < 0 ? `${a}|${b}` : `${b}|${a}`);
-    const chosen = new Set();
-    for (let i = 1; i < order.length; i++) {
-      const parent = order[Math.floor(rng() * i)];
-      chosen.add(pairKey(order[i], parent));
-    }
-
-    for (let i = 0; i < ids.length; i++) {
-      for (let j = i + 1; j < ids.length; j++) {
-        const key = pairKey(ids[i], ids[j]);
-        if (!chosen.has(key) && rng() < density) chosen.add(key);
-      }
-    }
-
-    const edges = Array.from(chosen)
-      .map(key => key.split('|'))
-      .sort((a, b) => compareLabels(a[0], b[0]) || compareLabels(a[1], b[1]))
-      .map(([source, target]) => ({ source, target, weight: Math.floor(rng() * 9) + 1 }));
-
-    return { start: ids[0], nodes: ids, edges };
-  }
-
-  /* ---------------------------- Prim ---------------------------------- */
-
-  function primHeapOrder(inHeap, key) {
-    return inHeap.slice().sort((a, b) => {
-      const ka = key[a];
-      const kb = key[b];
-      if (ka !== kb) return ka < kb ? -1 : 1;
-      return compareLabels(a, b);
-    });
-  }
-
-  function buildPrimTrace(graphDef) {
-    const ids = graphDef.nodes.map(n => n.id);
-    const edges = graphDef.edges;
-    const start = graphDef.start;
-    const adjacency = buildAdjacency(ids, edges);
-    const n = ids.length;
-
+  function buildPrim(g) {
+    const s = g.source;
+    const ids = g.nodes.map(n => n.id);
     const key = {};
     const pai = {};
     const paiEdge = {};
-    const inHeap = new Set(ids);
     const X = [];
+    const inX = new Set();
+    const H = new Set();
     const T = [];
-    let total = 0;
-    const steps = [];
+    let W = 0;
+    const out = [];
 
-    const snapshot = extra => {
-      steps.push({
-        algo: 'prim',
-        key: { ...key },
-        pai: { ...pai },
-        paiEdge: { ...paiEdge },
-        inHeap: ids.filter(id => inHeap.has(id)),
-        X: X.slice(),
-        T: T.slice(),
-        total,
-        current: null,
-        examEdge: null,
-        examV: null,
-        checks: [],
-        changed: [],
-        ...extra
-      });
-    };
+    const snap = extra => out.push(Object.assign({
+      key: { ...key }, pai: { ...pai }, paiEdge: { ...paiEdge },
+      X: X.slice(), H: [...H], T: T.slice(), W,
+      wStar: null, target: null, edge: null, changed: null, old: null, extracted: null
+    }, extra));
 
-    ids.forEach(id => {
-      key[id] = INF;
-      pai[id] = null;
-      paiEdge[id] = null;
-    });
-    key[start] = 0;
-
-    snapshot({
-      type: 'init',
-      lines: ['init', 'init-s', 'build'],
-      changed: [start],
-      message: `Initialization: key[v] = ∞ and pai[v] = ⊥ for every vertex; key[${start}] = 0 and T = ∅. The min-heap H contains all ${n} vertices.`
+    snap({
+      phase: 'input',
+      lines: ['p1', 'p2'],
+      msg: `<b>Entrada:</b> grafo não direcionado com ${ids.length} vértices e ${g.edges.length} arestas com custos, e vértice inicial <i>s</i> = ${nodeRef(s)}. ` +
+        `<b>Saída:</b> uma árvore geradora mínima <i>T</i>. <span class="tip">Clique em um vértice para mudar a origem.</span>`
     });
 
-    while (inHeap.size > 0) {
-      const u = primHeapOrder(Array.from(inHeap), key)[0];
-      inHeap.delete(u);
+    ids.forEach(id => { key[id] = id === s ? 0 : INF; H.add(id); });
+    snap({
+      phase: 'init',
+      lines: ['p3', 'p4', 'p5', 'p6'],
+      msg: `<b>Inicialização:</b> <i>key</i>[${nodeRef(s)}] = 0, <i>key</i>[<i>v</i>] = ∞ e <i>pai</i>[<i>v</i>] = ⊥ para os demais, <i>T</i> = ∅. ` +
+        `<i>H</i> contém <b>todos</b> os vértices, ordenados por <i>key</i>.`
+    });
+
+    const byKey = (a, b) => (key[a] - key[b]) || (g.order.get(a) - g.order.get(b));
+    while (H.size > 0) {
+      const u = [...H].sort(byKey)[0];
+      const k = key[u];
+      H.delete(u);
       X.push(u);
-
-      const lines = ['while', 'extract'];
-      let message = `ExtractMin(H) = ${u} (key ${formatValue(key[u])}).`;
-      if (pai[u] !== null) {
-        const e = paiEdge[u];
-        T.push(e);
-        total += edges[e].weight;
-        lines.push('add');
-        message += ` pai[${u}] = ${pai[u]} ≠ ⊥ → add edge ${pai[u]}–${u} (w = ${edges[e].weight}) to T. Now w(T) = ${total}.`;
-      } else if (u === start) {
-        message += ` pai[${u}] = ⊥ (start vertex) → no edge is added.`;
+      inX.add(u);
+      let msg = `<b>ExtraiMin(<i>H</i>)</b> = ${nodeRef(u)} (<i>key</i> = ${fmt(k)}): ${nodeRef(u)} entra em <i>X</i>.`;
+      const lines = ['p7', 'p8', 'p9'];
+      let added = null;
+      if (pai[u] !== undefined) {
+        added = paiEdge[u];
+        T.push(added);
+        W += g.edges[added].w;
+        lines.push('p10');
+        msg += ` Como <i>pai</i>[${nodeRef(u)}] = ${nodeRef(pai[u])}, a aresta (${nodeRef(pai[u])}, ${nodeRef(u)}) de custo ${k} entra em <i>T</i> <span class="good">(<i>w</i>(<i>T</i>) = ${W})</span>.`;
+      } else if (k === INF) {
+        msg += ` <i>key</i> = ∞: ${nodeRef(u)} não está ligado a <i>X</i>, o grafo é desconexo.`;
       } else {
-        message += ` key = ∞ and pai[${u}] = ⊥: ${u} is not connected to the vertices already extracted, so it starts a new tree (the graph is disconnected).`;
+        msg += ` <i>pai</i>[${nodeRef(u)}] = ⊥: é a origem, nenhuma aresta entra em <i>T</i>.`;
       }
+      snap({ phase: 'extract', lines, wStar: u, extracted: { v: u, k }, msg });
 
-      const toScan = adjacency[u].filter(({ node }) => inHeap.has(node));
-      if (toScan.length === 0 && inHeap.size > 0) {
-        message += ` No edge (${u}, v) with v ∈ H to scan.`;
-      } else if (toScan.length > 0) {
-        message += ` Next: scan the edges (${u}, v) with v ∈ H: ${toScan.map(item => item.node).join(', ')}.`;
-      }
-
-      snapshot({ type: 'extract', current: u, lines, message, changed: [u] });
-
-      const checks = [];
-      toScan.forEach(({ node: v, weight: w, edge: e }) => {
-        const before = key[v];
-        const beforePai = pai[v];
-        const updated = w < before;
-        if (updated) {
-          pai[v] = u;
+      const nbrs = g.adj.get(u).filter(a => H.has(a.to));
+      for (const { to: v, w, edge } of nbrs) {
+        const old = key[v];
+        const better = w < old;
+        if (better) {
           key[v] = w;
-          paiEdge[v] = e;
+          pai[v] = u;
+          paiEdge[v] = edge;
         }
-        checks.push({ u, v, w, before, beforePai, updated });
-
-        const stepMessage = updated
-          ? `Edge ${u}–${v}: w(${u},${v}) = ${w} < key[${v}] = ${formatValue(before)} → pai[${v}] ← ${u}, key[${v}] ← ${w}, DecreaseKey(H, ${v}, ${w}).`
-          : `Edge ${u}–${v}: w(${u},${v}) = ${w} is not less than key[${v}] = ${formatValue(before)} → no change (${v} keeps pai[${v}] = ${formatValue(beforePai)}).`;
-
-        snapshot({
-          type: 'examine',
-          current: u,
-          examEdge: e,
-          examV: v,
-          checks: checks.slice(),
-          changed: updated ? [v] : [],
-          lines: updated ? ['for', 'if', 'update', 'decrease'] : ['for', 'if'],
-          message: stepMessage
+        const test = `Aresta (${nodeRef(u)}, ${nodeRef(v)}) com ${nodeRef(v)} ∈ <i>H</i>: <i>w</i> = ${w}`;
+        snap({
+          phase: 'relax',
+          lines: better ? ['p11', 'p12', 'p13', 'p14', 'p15'] : ['p11', 'p12'],
+          wStar: u,
+          target: v,
+          edge,
+          changed: better ? v : null,
+          old,
+          msg: better
+            ? `${test} &lt; <i>key</i>[${nodeRef(v)}] = ${fmt(old)}, então <i>pai</i>[${nodeRef(v)}] = ${nodeRef(u)}, <i>key</i>[${nodeRef(v)}] = <b>${w}</b> e DiminuiChave. <span class="good">Atualizada!</span>`
+            : `${test} ≥ <i>key</i>[${nodeRef(v)}] = ${fmt(old)}: nada muda (${nodeRef(v)} já tem uma ligação mais barata com <i>X</i>).`
         });
-      });
+      }
+
+      if (H.size > 0) {
+        const skipped = g.adj.get(u).length - nbrs.length - (pai[u] !== undefined ? 1 : 0);
+        const summary = nbrs.length
+          ? `Todas as arestas de ${nodeRef(u)} para vértices em <i>H</i> foram avaliadas.`
+          : `${nodeRef(u)} não tem arestas para vértices em <i>H</i>.`;
+        snap({
+          phase: 'pause',
+          lines: ['p7'],
+          msg: `${summary}${skipped > 0 ? ' Arestas para vértices já em <i>X</i> são ignoradas (formariam ciclo).' : ''} ` +
+            `<span class="tip"><i>H</i> não está vazio; o próximo passo é ExtraiMin(<i>H</i>). Qual vértice será extraído?</span>`
+        });
+      }
     }
 
-    const connected = T.length === n - 1;
-    snapshot({
-      type: 'done',
-      lines: ['return'],
-      message: connected
-        ? `H = ∅ → return T. Minimum spanning tree with |T| = ${T.length} edges and total weight ${total}.`
-        : `H = ∅ → return T. The graph is disconnected: T is a minimum spanning forest with ${T.length} edges and total weight ${total}.`
+    snap({
+      phase: 'done',
+      lines: ['p7', 'p16'],
+      msg: `<b><i>H</i> está vazio: fim!</b> <i>T</i> tem ${T.length} arestas e é uma árvore geradora mínima de custo <b><i>w</i>(<i>T</i>) = ${W}</b>.`
     });
-
-    return steps;
+    return out;
   }
 
-  /* ---------------------------- Kruskal -------------------------------- */
+  // ── Kruskal (pseudocódigo KruskalUF do slide da aula 21) ─────────────────
 
-  function kruskalSortedOrder(edges) {
-    return edges
-      .map((edge, index) => ({ weight: edge.weight, index }))
-      .sort((a, b) => a.weight - b.weight || a.index - b.index)
-      .map(item => item.index);
-  }
-
-  function buildKruskalTrace(graphDef) {
-    const ids = graphDef.nodes.map(n => n.id);
-    const edges = graphDef.edges;
+  function buildKruskal(g) {
+    const ids = g.nodes.map(n => n.id);
     const n = ids.length;
-    const order = kruskalSortedOrder(edges);
-    const status = edges.map(() => 'pending');
+    const pai = {};
+    const rank = {};
+    const status = {};
     const T = [];
-    let total = 0;
-    let pai = null;
-    let rank = null;
-    let colorOf = {};
-    const colorCount = 8;
-    const steps = [];
+    let W = 0;
+    let sorted = null;
+    const out = [];
 
-    const snapshot = extra => {
-      steps.push({
-        algo: 'kruskal',
-        order: order.slice(),
-        status: status.slice(),
-        pai: pai ? { ...pai } : null,
-        rank: rank ? { ...rank } : null,
-        colorOf: { ...colorOf },
-        T: T.slice(),
-        total,
-        currentEdge: null,
-        changed: [],
-        finds: null,
-        ...extra
-      });
-    };
+    const snap = extra => out.push(Object.assign({
+      pai: { ...pai }, rank: { ...rank }, status: { ...status }, T: T.slice(), W,
+      sorted, edge: null, targets: [], finds: null, changedPai: {}, changedRank: null
+    }, extra));
 
-    snapshot({
-      type: 'sort',
-      lines: ['init-t', 'sort'],
-      message: `T = ∅. Sort the ${edges.length} edges by increasing weight (ties keep the input order): ${order.map(e => `${edgeLabel(edges[e])} (${edges[e].weight})`).join(', ')}.`
+    snap({
+      phase: 'input',
+      lines: [],
+      msg: `<b>Entrada:</b> grafo não direcionado com ${n} vértices e ${g.edges.length} arestas com custos <i>c<sub>e</sub></i>. ` +
+        `<b>Saída:</b> uma árvore geradora mínima <i>T</i>.`
     });
 
-    pai = {};
-    rank = {};
-    ids.forEach(id => {
-      pai[id] = id;
-      rank[id] = 0;
-    });
-    snapshot({
-      type: 'initialize',
-      lines: ['initialize'],
-      changed: ids.slice(),
-      message: `Initialize(V): every vertex is its own component, pai[v] = v and rank[v] = 0 (${n} components).`
+    sorted = g.edges.map((_, i) => i).sort((a, b) => (g.edges[a].w - g.edges[b].w) || (a - b));
+    ids.forEach(id => { pai[id] = id; rank[id] = 0; });
+    snap({
+      phase: 'init',
+      lines: ['k1', 'k2', 'k3'],
+      msg: `<b>Inicialização:</b> <i>T</i> = ∅; as arestas são <b>ordenadas por custo</b> (empates: ordem de entrada); ` +
+        `Inicialize(<i>V</i>): cada vértice é sua própria raiz (<i>pai</i>[<i>v</i>] = <i>v</i>, <i>rank</i>[<i>v</i>] = 0).`
     });
 
-    const find = (v, compressions) => {
-      const path = [];
-      let r = v;
-      while (pai[r] !== r) {
-        path.push(r);
-        r = pai[r];
-      }
-      path.forEach(x => {
-        if (pai[x] !== r) {
-          compressions.push({ v: x, from: pai[x], to: r });
-          pai[x] = r;
+    let stopped = false;
+    for (let p = 0; p < sorted.length; p++) {
+      const i = sorted[p];
+      const e = g.edges[i];
+      const changed = {};
+      const find = x => {
+        if (pai[x] !== x) {
+          const root = find(pai[x]);
+          if (pai[x] !== root) { changed[x] = pai[x]; pai[x] = root; }
         }
-      });
-      return r;
-    };
-
-    const pickColor = () => {
-      const usage = new Array(colorCount).fill(0);
-      Object.values(colorOf).forEach(c => {
-        usage[c] += 1;
-      });
-      let best = 0;
-      for (let c = 1; c < colorCount; c++) {
-        if (usage[c] < usage[best]) best = c;
-      }
-      return best;
-    };
-
-    let finished = false;
-    for (let k = 0; k < order.length; k++) {
-      const e = order[k];
-      const { source: u, target: v, weight: w } = edges[e];
-      const compressions = [];
-      const ru = find(u, compressions);
-      const rv = find(v, compressions);
-      const compressionText = compressions.length > 0
-        ? ` Path compression: ${compressions.map(c => `pai[${c.v}] ← ${c.to}`).join(', ')}.`
+        return pai[x];
+      };
+      const r = find(e.u);
+      const s = find(e.v);
+      const compressed = Object.keys(changed);
+      const compMsg = compressed.length
+        ? ` <span class="tip">Compressão de caminho: ${compressed.map(x => `<i>pai</i>[${nodeRef(x)}] ← ${nodeRef(pai[x])}`).join(', ')}.</span>`
         : '';
-      const changed = compressions.map(c => c.v);
+      const findLines = compressed.length ? ['f1', 'f2', 'f3'] : ['f1', 'f3'];
+      const finds = `Find(${nodeRef(e.u)}) = ${nodeRef(r)} e Find(${nodeRef(e.v)}) = ${nodeRef(s)}`;
+      const head = `Aresta ${edgeRef(e)} de custo ${e.w}: ${finds}`;
 
-      if (ru !== rv) {
-        T.push(e);
-        total += w;
-        status[e] = 'accepted';
-
-        // Union by rank; on ties the root of u becomes the parent.
-        let parent;
-        let child;
-        let unionText;
-        if (rank[ru] > rank[rv]) {
-          parent = ru;
-          child = rv;
-          unionText = `rank[${ru}] = ${rank[ru]} > rank[${rv}] = ${rank[rv]}, so pai[${rv}] ← ${ru}`;
-        } else if (rank[ru] < rank[rv]) {
-          parent = rv;
-          child = ru;
-          unionText = `rank[${ru}] = ${rank[ru]} < rank[${rv}] = ${rank[rv]}, so pai[${ru}] ← ${rv}`;
-        } else {
-          parent = ru;
-          child = rv;
-          unionText = `rank[${ru}] = rank[${rv}] = ${rank[ru]}, so pai[${rv}] ← ${ru} and rank[${ru}] ← ${rank[ru] + 1}`;
-        }
-        pai[child] = parent;
-        if (rank[parent] === rank[child]) rank[parent] += 1;
-        changed.push(child, parent);
-
-        const parentColor = colorOf[parent];
-        const childColor = colorOf[child];
-        delete colorOf[child];
-        if (parentColor === undefined) {
-          colorOf[parent] = childColor !== undefined ? childColor : pickColor();
-        }
-
-        snapshot({
-          type: 'accept',
-          currentEdge: e,
-          changed,
-          finds: { u, v, ru, rv },
-          lines: ['for', 'if', 'add', 'union'],
-          message: `Edge ${edgeLabel(edges[e])} (w = ${w}): Find(${u}) = ${ru}, Find(${v}) = ${rv}: different components → accept edge ${edgeLabel(edges[e])}, Union(${u}, ${v}): ${unionText}.${compressionText} Now w(T) = ${total}, |T| = ${T.length}.`
+      if (r === s) {
+        status[i] = 'rej';
+        snap({
+          phase: 'reject',
+          lines: ['k4', 'k5', ...findLines],
+          edge: i,
+          pos: p,
+          targets: [e.u, e.v],
+          finds: { r, s },
+          changedPai: changed,
+          msg: `${head}: <b>mesma componente</b>. Adicionar a aresta formaria um ciclo: <span class="bad">rejeitada</span>.${compMsg}`
         });
+        continue;
+      }
 
-        if (T.length === n - 1) {
-          const remaining = order.slice(k + 1);
-          remaining.forEach(idx => {
-            status[idx] = 'skipped';
-          });
-          snapshot({
-            type: 'done',
-            lines: ['check'],
-            message: `|T| = ${T.length} = |V| − 1 → return T. Minimum spanning tree with total weight ${total}.${remaining.length > 0 ? ` The remaining edges (${remaining.map(idx => edgeLabel(edges[idx])).join(', ')}) are never examined.` : ''}`
-          });
-          finished = true;
-          break;
-        }
-      } else {
-        status[e] = 'rejected';
-        snapshot({
-          type: 'reject',
-          currentEdge: e,
-          changed,
-          finds: { u, v, ru, rv },
-          lines: ['for', 'if'],
-          message: `Edge ${edgeLabel(edges[e])} (w = ${w}): Find(${u}) = ${ru}, Find(${v}) = ${rv}: same component → reject ${edgeLabel(edges[e])} (it would create a cycle).${compressionText}`
+      snap({
+        phase: 'test',
+        lines: ['k4', 'k5', ...findLines],
+        edge: i,
+        pos: p,
+        targets: [e.u, e.v],
+        finds: { r, s },
+        changedPai: changed,
+        msg: `${head}: <b>componentes diferentes</b>, a aresta não forma ciclo.${compMsg}`
+      });
+
+      T.push(i);
+      W += e.w;
+      status[i] = 'acc';
+      let a = r;
+      let b = s;
+      if (rank[a] < rank[b]) [a, b] = [b, a];
+      const rankMsg = rank[r] === rank[s]
+        ? `<i>rank</i>[${nodeRef(r)}] = <i>rank</i>[${nodeRef(s)}] = ${rank[r]}`
+        : `<i>rank</i>[${nodeRef(r)}] = ${rank[r]} ${rank[r] < rank[s] ? '&lt;' : '&gt;'} <i>rank</i>[${nodeRef(s)}] = ${rank[s]}`;
+      pai[b] = a;
+      let rankUp = null;
+      if (rank[a] === rank[b]) { rank[a] += 1; rankUp = a; }
+      snap({
+        phase: 'union',
+        lines: ['k6', 'k7', 'u1', 'u2', 'u3', ...(rankUp ? ['u4'] : [])],
+        edge: i,
+        pos: p,
+        targets: [e.u, e.v],
+        changedPai: { [b]: b },
+        changedRank: rankUp,
+        msg: `<span class="good">Aceita:</span> ${edgeRef(e)} entra em <i>T</i> (<i>w</i>(<i>T</i>) = ${W}). ` +
+          `Union: ${rankMsg}, então <i>pai</i>[${nodeRef(b)}] ← ${nodeRef(a)}` +
+          (rankUp ? ` e, como os ranks eram iguais, <i>rank</i>[${nodeRef(a)}] ← ${rank[a]}.` : '.')
+      });
+
+      if (T.length === n - 1) {
+        sorted.slice(p + 1).forEach(j => { status[j] = 'skip'; });
+        const rest = sorted.length - p - 1;
+        snap({
+          phase: 'done',
+          lines: ['k8', 'k9'],
+          msg: `<b>|<i>T</i>| = ${T.length} = |<i>V</i>| − 1: fim!</b> <i>T</i> é uma árvore geradora mínima de custo <b><i>w</i>(<i>T</i>) = ${W}</b>.` +
+            (rest ? ` As ${rest} arestas restantes nem precisam ser examinadas.` : '')
         });
+        stopped = true;
+        break;
       }
     }
 
-    if (!finished) {
-      snapshot({
-        type: 'done',
-        lines: ['return'],
-        message: `All edges examined but |T| = ${T.length} < |V| − 1 = ${n - 1}: the graph is disconnected, so T is a minimum spanning forest with total weight ${total}.`
+    if (!stopped) {
+      snap({
+        phase: 'done',
+        lines: ['k10'],
+        msg: `<b>Todas as arestas foram examinadas.</b> ` + (T.length === n - 1
+          ? `<i>T</i> é uma árvore geradora mínima de custo <b><i>w</i>(<i>T</i>) = ${W}</b>.`
+          : `O grafo é desconexo: <i>T</i> é uma floresta geradora mínima de custo ${W}.`)
       });
     }
-
-    return steps;
+    return out;
   }
 
-  function findRootNoCompress(paiMap, v) {
-    let r = v;
-    let guard = 0;
-    while (paiMap[r] !== r && guard < 10000) {
-      r = paiMap[r];
-      guard += 1;
-    }
-    return r;
+  function rootOf(pai, x) {
+    while (pai[x] !== x) x = pai[x];
+    return x;
   }
 
-  const Core = {
-    INF,
-    exampleGraphs,
-    DEFAULT_EXAMPLE,
-    compareLabels,
-    normalizeGraphDefinition,
-    buildAdjacency,
-    isConnected,
-    computeLayeredLayout,
-    computeNormalizedPositions,
-    generateRandomGraph,
-    primHeapOrder,
-    buildPrimTrace,
-    kruskalSortedOrder,
-    buildKruskalTrace,
-    findRootNoCompress,
-    edgeLabel
-  };
-
-  if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Core;
+  // Componentes atuais (conjuntos do Union-Find), na ordem dos vértices.
+  function components(state) {
+    const groups = new Map();
+    graph.nodes.forEach(nd => {
+      const r = state.pai[nd.id] === undefined ? nd.id : rootOf(state.pai, nd.id);
+      if (!groups.has(r)) groups.set(r, []);
+      groups.get(r).push(nd.id);
+    });
+    return [...groups.values()];
   }
 
-  if (typeof document === 'undefined') return;
+  // ── Desenho do grafo (feito uma vez por grafo) ───────────────────────────
 
-  /* ========================================================================
-   * UI
-   * ====================================================================== */
+  function svgEl(tag, attrs, parent) {
+    const el = document.createElementNS(SVG_NS, tag);
+    Object.entries(attrs || {}).forEach(([k, v]) => el.setAttribute(k, v));
+    if (parent) parent.appendChild(el);
+    return el;
+  }
 
-  const PRIM_PSEUDO = [
-    { key: 'init', indent: 0, text: 'for each v ∈ V: key[v] ← ∞; pai[v] ← ⊥' },
-    { key: 'init-s', indent: 0, text: 'key[s] ← 0; T ← ∅' },
-    { key: 'build', indent: 0, text: 'H ← min-heap with all v ∈ V, ordered by key' },
-    { key: 'while', indent: 0, text: 'while H ≠ ∅:' },
-    { key: 'extract', indent: 1, text: 'u ← ExtractMin(H)' },
-    { key: 'add', indent: 1, text: 'if pai[u] ≠ ⊥: T ← T ∪ {(pai[u], u)}' },
-    { key: 'for', indent: 1, text: 'for each edge (u, v) with v ∈ H:' },
-    { key: 'if', indent: 2, text: 'if w(u, v) < key[v]:' },
-    { key: 'update', indent: 3, text: 'pai[v] ← u; key[v] ← w(u, v)' },
-    { key: 'decrease', indent: 3, text: 'DecreaseKey(H, v, key[v])' },
-    { key: 'return', indent: 0, text: 'return T' }
-  ];
+  function edgeGeometry(g, e) {
+    const a = g.nodes[g.order.get(e.u)];
+    const b = g.nodes[g.order.get(e.v)];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    const ux = dx / len;
+    const uy = dy / len;
+    return {
+      d: `M${(a.x + ux * R).toFixed(1)},${(a.y + uy * R).toFixed(1)} L${(b.x - ux * R).toFixed(1)},${(b.y - uy * R).toFixed(1)}`,
+      lx: a.x + dx * e.t,
+      ly: a.y + dy * e.t
+    };
+  }
 
-  const KRUSKAL_PSEUDO = [
-    { key: 'init-t', indent: 0, text: 'T ← ∅' },
-    { key: 'sort', indent: 0, text: 'sort E by increasing cost' },
-    { key: 'initialize', indent: 0, text: 'Initialize(V)   // pai[v] ← v; rank[v] ← 0' },
-    { key: 'for', indent: 0, text: 'for each (u, v) ∈ E in sorted order:' },
-    { key: 'if', indent: 1, text: 'if Find(u) ≠ Find(v):' },
-    { key: 'add', indent: 2, text: 'T ← T ∪ {(u, v)}' },
-    { key: 'union', indent: 2, text: 'Union(u, v)' },
-    { key: 'check', indent: 2, text: 'if |T| = |V| − 1: return T' },
-    { key: 'return', indent: 0, text: 'return T' }
-  ];
+  // Escolhe, ao redor de cada vértice, direções livres de arestas para o
+  // rótulo de key e para a etiqueta "origem".
+  const SPOTS = [-90, -45, -135, 0, 180, 45, 135, 90].map(deg => (deg * Math.PI) / 180);
 
-  const AUTO_RUN_DELAY_MS = 700;
+  function freeDirections(g, n) {
+    const dirs = [];
+    g.edges.forEach(e => {
+      if (e.u !== n.id && e.v !== n.id) return;
+      const other = g.nodes[g.order.get(e.u === n.id ? e.v : e.u)];
+      dirs.push(Math.atan2(other.y - n.y, other.x - n.x));
+    });
+    const gap = a => (dirs.length
+      ? Math.min(...dirs.map(d => { const x = Math.abs(a - d) % (2 * Math.PI); return Math.min(x, 2 * Math.PI - x); }))
+      : Math.PI);
+    return SPOTS.map((a, i) => ({ a, score: Math.min(gap(a), Math.PI / 2) - i * 1e-3 }))
+      .sort((p, q) => q.score - p.score)
+      .map(p => p.a);
+  }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const container = document.getElementById('viewHost');
-    const edgeLayer = document.getElementById('edgeLayer');
-    const stepBtn = document.getElementById('stepBtn');
-    const autoBtn = document.getElementById('autoBtn');
-    const resetBtn = document.getElementById('resetBtn');
-    const newGraphBtn = document.getElementById('newGraphBtn');
-    const statusBanner = document.getElementById('statusBanner');
-    const liveBadge = document.getElementById('liveBadge');
-    const appSubtitle = document.getElementById('appSubtitle');
-    const algorithmSelect = document.getElementById('algorithmSelect');
-    const startSelect = document.getElementById('startSelect');
-    const startField = document.getElementById('startField');
-    const stateMetrics = document.getElementById('stateMetrics');
-    const stateTable = document.getElementById('stateTable');
-    const tableTitle = document.getElementById('tableTitle');
-    const pseudoCode = document.getElementById('pseudoCode');
-    const forestPanel = document.getElementById('forestPanel');
-    const forestView = document.getElementById('forestView');
-    const explainTitle = document.getElementById('explainTitle');
-    const explainContent = document.getElementById('explainContent');
-    const legendRow = document.getElementById('legendRow');
-    const exampleGraphSelect = document.getElementById('exampleGraphSelect');
-    const loadExampleBtn = document.getElementById('loadExampleBtn');
-    const exportGraphBtn = document.getElementById('exportGraphBtn');
-    const graphFileInput = document.getElementById('graphFileInput');
-    const graphJsonInput = document.getElementById('graphJsonInput');
-    const applyGraphBtn = document.getElementById('applyGraphBtn');
-    const nodeCountInput = document.getElementById('nodeCountInput');
-    const densityRange = document.getElementById('densityRange');
-    const densityValue = document.getElementById('densityValue');
-    const boardStack = document.getElementById('boardStack');
-    const boardResizeHandle = boardStack?.querySelector('.resize-handle-x');
+  function buildGraph(g) {
+    const svg = ui.svg;
+    svg.innerHTML = '';
 
-    let algo = 'prim';
-    let startNode = null;
-    let nodes = []; // {id, nx, ny} with normalized coordinates
-    let edges = [];
-    let nodeIndex = new Map();
-    let trace = [];
-    let stepIndex = -1; // -1 = idle (not started)
-    let autoTimer = null;
-    let lastSize = { width: 0, height: 0 };
+    const xs = g.nodes.map(n => n.x);
+    const ys = g.nodes.map(n => n.y);
+    const minX = Math.min(...xs) - 120;
+    const maxX = Math.max(...xs) + 120;
+    const minY = Math.min(...ys) - 80;
+    const maxY = Math.max(...ys) + 72;
+    svg.setAttribute('viewBox', `${minX} ${minY} ${maxX - minX} ${maxY - minY}`);
 
-    /* --------------------------- helpers ------------------------------ */
+    const halos = svgEl('g', { class: 'layer-halos' }, svg);
+    const edgeLayer = svgEl('g', { class: 'layer-edges' }, svg);
+    const labelLayer = svgEl('g', { class: 'layer-labels' }, svg);
+    const nodeLayer = svgEl('g', { class: 'layer-nodes' }, svg);
 
-    function escapeHtml(value) {
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
+    const edges = g.edges.map(e => {
+      const geo = edgeGeometry(g, e);
+      const path = svgEl('path', { d: geo.d, class: 'edge' }, edgeLayer);
+      const label = svgEl('text', { x: geo.lx.toFixed(1), y: geo.ly.toFixed(1), class: 'weight' }, labelLayer);
+      label.textContent = e.w;
+      return { path, label };
+    });
 
-    function getContainerSize() {
-      return {
-        width: container.clientWidth || 700,
-        height: container.clientHeight || 430
-      };
-    }
+    const nodes = {};
+    g.nodes.forEach(n => {
+      const halo = svgEl('circle', { cx: n.x, cy: n.y, r: R + 20, class: 'halo' }, halos);
+      const group = svgEl('g', { class: 'node', 'data-id': n.id }, nodeLayer);
+      svgEl('circle', { cx: n.x, cy: n.y, r: R + 7, class: 'ring' }, group);
+      svgEl('circle', { cx: n.x, cy: n.y, r: R, class: 'body' }, group);
+      const label = svgEl('text', { x: n.x, y: n.y, class: 'label' }, group);
+      label.textContent = n.id;
 
-    const PAD_X = 40;
-    const PAD_TOP = 48;
-    const PAD_BOTTOM = 30;
+      const dirs = freeDirections(g, n);
+      const badgeAngle = dirs[0];
+      const badge = svgEl('g', { class: 'badge hidden' }, group);
+      const badgeRect = svgEl('rect', { rx: 8, ry: 8, height: 28 }, badge);
+      const badgeText = svgEl('text', {}, badge);
 
-    function toPixel(node) {
-      const { width, height } = getContainerSize();
-      return {
-        x: PAD_X + node.nx * Math.max(1, width - 2 * PAD_X),
-        y: PAD_TOP + node.ny * Math.max(1, height - PAD_TOP - PAD_BOTTOM)
-      };
-    }
-
-    function fromPixel(x, y) {
-      const { width, height } = getContainerSize();
-      return {
-        nx: clamp((x - PAD_X) / Math.max(1, width - 2 * PAD_X), 0, 1),
-        ny: clamp((y - PAD_TOP) / Math.max(1, height - PAD_TOP - PAD_BOTTOM), 0, 1)
-      };
-    }
-
-    function getRandomGraphOptions() {
-      const rawNodeCount = parseInt(nodeCountInput?.value || '7', 10);
-      const rawDensity = parseInt(densityRange?.value || '40', 10);
-      const nodeCount = clamp(Number.isFinite(rawNodeCount) ? rawNodeCount : 7, 4, 24);
-      const densityPercent = clamp(Number.isFinite(rawDensity) ? rawDensity : 40, 10, 90);
-      if (nodeCountInput) nodeCountInput.value = String(nodeCount);
-      return { nodeCount, density: densityPercent / 100, densityPercent };
-    }
-
-    function updateDensityDisplay() {
-      if (!densityValue || !densityRange) return;
-      densityValue.textContent = `${densityRange.value}%`;
-    }
-
-    function currentStep() {
-      return stepIndex >= 0 ? trace[stepIndex] : null;
-    }
-
-    function algoName() {
-      return algo === 'prim' ? "Prim's algorithm" : "Kruskal's algorithm";
-    }
-
-    function idleMessage() {
-      return algo === 'prim'
-        ? `Click "Run step" to start Prim's algorithm from ${startNode}.`
-        : `Click "Run step" to start Kruskal's algorithm.`;
-    }
-
-    /* ------------------------ graph loading ---------------------------- */
-
-    function rebuildTrace() {
-      const graphDef = { start: startNode, nodes: nodes.map(n => ({ id: n.id })), edges };
-      trace = algo === 'prim' ? Core.buildPrimTrace(graphDef) : Core.buildKruskalTrace(graphDef);
-      stepIndex = -1;
-    }
-
-    function populateStartSelect() {
-      if (!startSelect) return;
-      startSelect.innerHTML = nodes
-        .map(n => `<option value="${escapeHtml(n.id)}">${escapeHtml(n.id)}</option>`)
-        .join('');
-      startSelect.value = startNode;
-    }
-
-    function syncGraphEditor() {
-      if (!graphJsonInput) return;
-      const serialized = {
-        start: startNode,
-        nodes: nodes.map(node => {
-          const p = toPixel(node);
-          return { id: node.id, x: Math.round(p.x), y: Math.round(p.y) };
-        }),
-        edges: edges.map(edge => ({ source: edge.source, target: edge.target, weight: edge.weight }))
-      };
-      graphJsonInput.value = JSON.stringify(serialized, null, 2);
-    }
-
-    function loadGraphDefinition(definition, sourceLabel) {
-      stopAuto();
-      const normalized = Core.normalizeGraphDefinition(definition);
-      const positions = Core.computeNormalizedPositions(normalized);
-      startNode = normalized.start;
-      nodes = normalized.nodes.map(n => ({ id: n.id, nx: positions[n.id].x, ny: positions[n.id].y }));
-      nodeIndex = new Map(nodes.map((n, i) => [n.id, i]));
-      edges = normalized.edges;
-      populateStartSelect();
-      rebuildTrace();
-
-      let message = `${sourceLabel} ${idleMessage()}`;
-      if (!Core.isConnected(normalized)) {
-        message += ' Note: this graph is disconnected, so the result will be a minimum spanning forest.';
-      }
-      statusBanner.textContent = message;
-
-      renderGraph();
-      updateUI();
-      syncGraphEditor();
-    }
-
-    function setAlgorithm(next, { announce = true } = {}) {
-      algo = next === 'kruskal' ? 'kruskal' : 'prim';
-      if (algorithmSelect) algorithmSelect.value = algo;
-      if (startField) startField.classList.toggle('is-disabled', algo !== 'prim');
-      if (startSelect) startSelect.disabled = algo !== 'prim';
-      if (appSubtitle) {
-        appSubtitle.textContent = algo === 'prim'
-          ? "Prim's algorithm: grow one tree from a start vertex, always adding the lightest edge leaving it."
-          : "Kruskal's algorithm: scan edges by increasing weight, keeping those that join two different components.";
-      }
-      if (nodes.length > 0) {
-        stopAuto();
-        rebuildTrace();
-        renderGraph();
-        updateUI();
-        if (announce) statusBanner.textContent = `Switched to ${algoName()}. ${idleMessage()}`;
-      }
-    }
-
-    /* --------------------------- rendering ----------------------------- */
-
-    function renderGraph() {
-      Array.from(container.querySelectorAll('.node, .edge-weight, .graph-overlay')).forEach(el => el.remove());
-      edgeLayer.innerHTML = '';
-      const { width, height } = getContainerSize();
-      lastSize = { width, height };
-      edgeLayer.setAttribute('viewBox', `0 0 ${width} ${height}`);
-
-      const svgNS = 'http://www.w3.org/2000/svg';
-      edges.forEach((edge, index) => {
-        const p1 = toPixel(nodes[nodeIndex.get(edge.source)]);
-        const p2 = toPixel(nodes[nodeIndex.get(edge.target)]);
-        const line = document.createElementNS(svgNS, 'line');
-        line.setAttribute('x1', p1.x);
-        line.setAttribute('y1', p1.y);
-        line.setAttribute('x2', p2.x);
-        line.setAttribute('y2', p2.y);
-        line.setAttribute('class', 'mst-edge');
-        line.id = `edge-${index}`;
-        edgeLayer.appendChild(line);
-
-        const label = document.createElement('div');
-        label.className = 'edge-weight';
-        label.id = `weight-${index}`;
-        label.textContent = edge.weight;
-        label.style.left = `${(p1.x + p2.x) / 2}px`;
-        label.style.top = `${(p1.y + p2.y) / 2}px`;
-        container.appendChild(label);
-      });
-
-      nodes.forEach((node, index) => {
-        const p = toPixel(node);
-        const el = document.createElement('div');
-        el.className = 'node';
-        el.id = `node-${index}`;
-        el.style.left = `${p.x}px`;
-        el.style.top = `${p.y}px`;
-        el.appendChild(document.createTextNode(node.id));
-
-        const keyLabel = document.createElement('div');
-        keyLabel.className = 'node-key';
-        keyLabel.id = `key-${index}`;
-        el.appendChild(keyLabel);
-
-        el.addEventListener('pointerdown', event => startNodeDrag(event, node, el));
-        container.appendChild(el);
-      });
-
-      const overlay = document.createElement('div');
-      overlay.className = 'graph-overlay';
-      overlay.id = 'graphOverlay';
-      container.appendChild(overlay);
-    }
-
-    function startNodeDrag(event, node, el) {
-      event.preventDefault();
-      try {
-        el.setPointerCapture(event.pointerId);
-      } catch (error) {
-        // Ignore: pointer capture is optional.
+      if (algo === 'prim' && n.id === g.source) {
+        const apart = a => Math.abs(Math.atan2(Math.sin(a - badgeAngle), Math.cos(a - badgeAngle))) >= Math.PI / 2;
+        const a = dirs.find(apart);
+        const tag = svgEl('text', {
+          x: (n.x + Math.cos(a) * (R + 22 + 26 * Math.abs(Math.cos(a)))).toFixed(1),
+          y: (n.y + Math.sin(a) * (R + 20)).toFixed(1),
+          class: 'source-tag'
+        }, group);
+        tag.textContent = 'origem';
       }
 
-      const onMove = moveEvent => {
-        const rect = container.getBoundingClientRect();
-        const pos = fromPixel(moveEvent.clientX - rect.left, moveEvent.clientY - rect.top);
-        node.nx = pos.nx;
-        node.ny = pos.ny;
-        renderGraph();
-        updateUI();
-      };
+      group.addEventListener('click', () => pickSource(n.id));
+      nodes[n.id] = { group, halo, badge, badgeRect, badgeText, badgeAngle, x: n.x, y: n.y };
+    });
 
-      const onUp = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        syncGraphEditor();
-      };
+    dom = { nodes, edges };
+  }
 
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp, { once: true });
-    }
+  // ── Desenho de um passo ──────────────────────────────────────────────────
 
-    function setNodeClasses(index, classes) {
-      const el = document.getElementById(`node-${index}`);
-      if (el) el.className = ['node', ...classes].join(' ');
-    }
+  function setBadge(d, text, cls) {
+    d.badgeText.textContent = text;
+    const width = 20 + 12 * text.length;
+    const ca = Math.cos(d.badgeAngle);
+    const cx = d.x + ca * (R + 20 + Math.abs(ca) * (width / 2 - 12));
+    const cy = d.y + Math.sin(d.badgeAngle) * (R + 20);
+    d.badgeText.setAttribute('x', cx.toFixed(1));
+    d.badgeText.setAttribute('y', cy.toFixed(1));
+    d.badgeRect.setAttribute('x', (cx - width / 2).toFixed(1));
+    d.badgeRect.setAttribute('y', (cy - 14).toFixed(1));
+    d.badgeRect.setAttribute('width', width);
+    d.badge.setAttribute('class', `badge ${cls}`);
+  }
 
-    function setEdgeClasses(index, classes) {
-      const line = document.getElementById(`edge-${index}`);
-      const label = document.getElementById(`weight-${index}`);
-      if (line) line.setAttribute('class', ['mst-edge', ...classes].join(' '));
-      if (label) label.className = ['edge-weight', ...classes].join(' ');
-    }
+  function setEdge(i, kind) {
+    const { path, label } = dom.edges[i];
+    path.setAttribute('class', `edge ${kind}`);
+    label.setAttribute('class', `weight ${kind}`);
+  }
 
-    function updateGraphView(step) {
-      const overlay = document.getElementById('graphOverlay');
+  function renderPrimGraph(state) {
+    const inX = new Set(state.X);
+    const inT = new Set(state.T);
+    const cand = new Set(Object.entries(state.paiEdge).filter(([v]) => !inX.has(v)).map(([, e]) => e));
+    const started = state.phase !== 'input';
 
-      if (algo === 'prim') {
-        const X = new Set(step ? step.X : []);
-        const treeEdges = new Set(step ? step.T : []);
-        const candidateEdges = new Set();
-        if (step) {
-          step.inHeap.forEach(v => {
-            if (step.paiEdge[v] !== null && step.paiEdge[v] !== undefined) candidateEdges.add(step.paiEdge[v]);
-          });
-        }
+    graph.edges.forEach((e, i) => {
+      let kind = 'base';
+      if (i === state.edge) kind = 'active';
+      else if (inT.has(i)) kind = 'tree';
+      else if (cand.has(i)) kind = 'cand';
+      else if (inX.has(e.u) && inX.has(e.v)) kind = 'inside';
+      setEdge(i, kind);
+    });
 
-        nodes.forEach((node, index) => {
-          const classes = [];
-          if (node.id === startNode && !X.has(node.id)) classes.push('start');
-          if (X.has(node.id)) classes.push('in-tree');
-          if (step && step.current === node.id && step.type !== 'done') classes.push('current');
-          if (step && step.examV === node.id) classes.push('examined');
-          setNodeClasses(index, classes);
-          const keyEl = document.getElementById(`key-${index}`);
-          if (keyEl) keyEl.textContent = step ? `key ${formatValue(step.key[node.id])}` : '';
-        });
-
-        edges.forEach((edge, index) => {
-          const classes = [];
-          const inX = (X.has(edge.source) ? 1 : 0) + (X.has(edge.target) ? 1 : 0);
-          if (step && step.examEdge === index) classes.push('examining');
-          else if (treeEdges.has(index)) classes.push('tree');
-          else if (step && inX === 1 && candidateEdges.has(index)) classes.push('candidate');
-          else if (step && inX === 1) classes.push('cut');
-          else if (step && inX === 2) classes.push('discarded');
-          setEdgeClasses(index, classes);
-        });
-      } else {
-        const status = step ? step.status : edges.map(() => 'pending');
-        const paiMap = step && step.pai ? step.pai : null;
-        const colorOf = step ? step.colorOf : {};
-        const currentEdge = step ? step.currentEdge : null;
-        const endpoints = new Set();
-        if (currentEdge !== null && currentEdge !== undefined) {
-          endpoints.add(edges[currentEdge].source);
-          endpoints.add(edges[currentEdge].target);
-        }
-
-        nodes.forEach((node, index) => {
-          const classes = [];
-          if (paiMap) {
-            const root = Core.findRootNoCompress(paiMap, node.id);
-            if (colorOf[root] !== undefined) classes.push('comp', `comp-${colorOf[root] + 1}`);
-          }
-          if (endpoints.has(node.id)) classes.push('examined');
-          setNodeClasses(index, classes);
-          const keyEl = document.getElementById(`key-${index}`);
-          if (keyEl) keyEl.textContent = '';
-        });
-
-        edges.forEach((edge, index) => {
-          const classes = [];
-          if (index === currentEdge) classes.push('examining');
-          else if (status[index] === 'accepted') classes.push('tree');
-          else if (status[index] === 'rejected') classes.push('rejected');
-          else if (status[index] === 'skipped') classes.push('skipped');
-          setEdgeClasses(index, classes);
-        });
-      }
-
-      if (overlay) {
-        const tSize = step ? step.T.length : 0;
-        const total = step ? step.total : 0;
-        const label = algo === 'prim' ? `Prim (s = ${startNode})` : 'Kruskal';
-        overlay.textContent = `${label} · w(T) = ${total} · |T| = ${tSize}/${nodes.length - 1}`;
-      }
-    }
-
-    function renderLegend() {
-      if (!legendRow) return;
-      const items = algo === 'prim'
-        ? [
-          ['line-tree', 'T'],
-          ['line-examining', 'examined'],
-          ['line-candidate', '(pai[v], v)'],
-          ['line-cut', 'cut edge']
-        ]
-        : [
-          ['line-tree', 'accepted'],
-          ['line-examining', 'current'],
-          ['line-rejected', 'rejected']
-        ];
-      legendRow.innerHTML = items
-        .map(([cls, text]) => `<span><i class="legend-line ${cls}"></i>${escapeHtml(text)}</span>`)
-        .join('');
-    }
-
-    function renderPseudoCode(step) {
-      if (!pseudoCode) return;
-      const lines = algo === 'prim' ? PRIM_PSEUDO : KRUSKAL_PSEUDO;
-      const active = new Set(step ? step.lines : []);
-      const html = lines
-        .map((line, index) => {
-          const isActive = active.has(line.key) ? 'active' : '';
-          const [code, comment] = line.text.split('//');
-          const text = escapeHtml(code.trimEnd()) + (comment ? ` <span class="pseudo-comment">//${escapeHtml(comment)}</span>` : '');
-          return `<li class="${isActive}"><span class="pseudo-line-no">${index + 1}</span><span class="pseudo-line-text" style="--indent:${line.indent}">${text}</span></li>`;
-        })
-        .join('');
-      pseudoCode.innerHTML = `<ol class="pseudo-list">${html}</ol>`;
-    }
-
-    function formatEdgeSet(edgeIndices, orientFrom) {
-      if (edgeIndices.length === 0) return '∅';
-      return `{ ${edgeIndices.map(e => {
-        const edge = edges[e];
-        return orientFrom ? orientFrom(edge) : edgeLabel(edge);
-      }).join(', ')} }`;
-    }
-
-    function metricRow(label, value) {
-      return `<div class="state-metric"><strong>${label}</strong> <span class="metric-value">${value}</span></div>`;
-    }
-
-    function renderPrimState(step) {
-      const primOrient = edge => {
-        if (!step) return edgeLabel(edge);
-        // Show tree edges as (pai[u], u).
-        if (step.pai[edge.target] === edge.source) return `${edge.source}–${edge.target}`;
-        if (step.pai[edge.source] === edge.target) return `${edge.target}–${edge.source}`;
-        return edgeLabel(edge);
-      };
-
-      const heapOrder = step ? Core.primHeapOrder(step.inHeap, step.key) : [];
-      const X = step ? step.X : [];
-      let html = '';
-      html += metricRow('Extracted (X):', X.length === 0 ? '∅' : `{ ${X.map(escapeHtml).join(', ')} }`);
-      html += metricRow('Heap H:', step
-        ? (heapOrder.length === 0 ? '[ ]' : `[ ${heapOrder.map(v => `(${escapeHtml(v)}: ${formatValue(step.key[v])})`).join(', ')} ]`)
-        : '—');
-      html += metricRow('Tree T:', step ? escapeHtml(formatEdgeSet(step.T, primOrient)) : '∅');
-      html += metricRow('Total:', `w(T) = ${step ? step.total : 0} &nbsp;·&nbsp; |T| = ${step ? step.T.length : 0} / ${nodes.length - 1}`);
-      stateMetrics.innerHTML = html;
-
-      tableTitle.textContent = 'Vertex Table';
-      let table = '<table class="dist-table"><thead><tr><th>v</th><th>key[v]</th><th>pai[v]</th><th>in H</th></tr></thead><tbody>';
-      nodes.forEach(n => {
-        const id = n.id;
-        const key = step ? formatValue(step.key[id]) : '–';
-        const pai = step ? formatValue(step.pai[id]) : '–';
-        const inHeap = step ? step.inHeap.includes(id) : null;
-        let rowClass = '';
-        if (step && step.current === id && step.type !== 'done') rowClass = 'dist-row-current';
-        else if (step && step.examV === id) rowClass = 'dist-row-examined';
-        else if (step && step.X.includes(id)) rowClass = 'dist-row-visited';
-        const changed = step && step.changed.includes(id) && step.type !== 'extract';
-        if (changed) rowClass += ' dist-row-changed';
-        const heapCell = inHeap === null ? '<td>–</td>' : (inHeap ? '<td class="in-heap-yes">yes</td>' : '<td class="in-heap-no">no</td>');
-        table += `<tr class="${rowClass}"><td><strong>${escapeHtml(id)}</strong></td><td class="${changed ? 'changed-cell' : ''}">${key}</td><td class="${changed ? 'changed-cell' : ''}">${escapeHtml(pai)}</td>${heapCell}</tr>`;
-      });
-      table += '</tbody></table>';
-      stateTable.innerHTML = table;
-      forestPanel.hidden = true;
-    }
-
-    function componentsOf(step) {
-      const groups = new Map();
-      nodes.forEach(n => {
-        const root = step && step.pai ? Core.findRootNoCompress(step.pai, n.id) : n.id;
-        if (!groups.has(root)) groups.set(root, []);
-        groups.get(root).push(n.id);
-      });
-      return groups;
-    }
-
-    function renderKruskalState(step) {
-      const groups = componentsOf(step);
-      let html = '';
-      html += metricRow('Tree T:', step ? escapeHtml(formatEdgeSet(step.T)) : '∅');
-      html += metricRow('Total:', `w(T) = ${step ? step.total : 0} &nbsp;·&nbsp; |T| = ${step ? step.T.length : 0} / ${nodes.length - 1}`);
-      html += metricRow('Components:', step && step.pai
-        ? `${groups.size}: ${Array.from(groups.values()).map(g => `{${g.map(escapeHtml).join(', ')}}`).join(' ')}`
-        : '—');
-      stateMetrics.innerHTML = html;
-
-      tableTitle.textContent = 'Union-Find Table';
-      const finds = step ? step.finds : null;
-      const endpoints = finds ? new Set([finds.u, finds.v]) : new Set();
-      let table = '<table class="dist-table"><thead><tr><th>v</th><th>pai[v]</th><th>rank[v]</th><th>root</th></tr></thead><tbody>';
-      nodes.forEach(n => {
-        const id = n.id;
-        const has = step && step.pai;
-        const root = has ? Core.findRootNoCompress(step.pai, id) : null;
-        const color = has && step.colorOf[root] !== undefined ? `comp-${step.colorOf[root] + 1}` : '';
-        let rowClass = endpoints.has(id) ? 'dist-row-examined' : '';
-        const changed = has && step.changed.includes(id) && step.type !== 'initialize';
-        if (changed) rowClass += ' dist-row-changed';
-        table += `<tr class="${rowClass}"><td><span class="comp-dot ${color}"></span><strong>${escapeHtml(id)}</strong></td>`
-          + `<td class="${changed ? 'changed-cell' : ''}">${has ? escapeHtml(step.pai[id]) : '–'}</td>`
-          + `<td class="${changed ? 'changed-cell' : ''}">${has ? step.rank[id] : '–'}</td>`
-          + `<td>${has ? escapeHtml(root) : '–'}</td></tr>`;
-      });
-      table += '</tbody></table>';
-      stateTable.innerHTML = table;
-
-      forestPanel.hidden = false;
-      renderForest(step);
-    }
-
-    function renderForest(step) {
-      if (!step || !step.pai) {
-        forestView.innerHTML = '<p class="forest-empty">The forest appears after Initialize(V).</p>';
+    graph.nodes.forEach(n => {
+      const d = dom.nodes[n.id];
+      const classes = ['node'];
+      if (inX.has(n.id)) classes.push('in-x');
+      if (n.id === state.wStar) classes.push('current');
+      if (n.id === state.target) classes.push('target');
+      if (n.id === state.changed) classes.push('changed');
+      d.group.setAttribute('class', classes.join(' '));
+      d.halo.setAttribute('class', inX.has(n.id) ? 'halo on' : 'halo');
+      if (!started) {
+        d.badge.setAttribute('class', 'badge hidden');
         return;
       }
+      let cls = '';
+      if (n.id === state.changed) cls = 'changed';
+      else if (n.id === state.wStar) cls = 'current';
+      else if (inX.has(n.id)) cls = 'in-x';
+      setBadge(d, fmt(state.key[n.id]), cls);
+    });
+  }
 
-      const children = {};
-      const roots = [];
-      nodes.forEach(n => {
-        children[n.id] = [];
-      });
-      nodes.forEach(n => {
-        const p = step.pai[n.id];
-        if (p === n.id) roots.push(n.id);
-        else children[p].push(n.id);
-      });
-      Object.values(children).forEach(list => list.sort(compareLabels));
+  function renderKruskalGraph(state) {
+    const inT = new Set(state.T);
+    const targets = new Set(state.targets);
+    graph.edges.forEach((e, i) => {
+      let kind = 'base';
+      const st = state.status[i];
+      if (i === state.edge) kind = state.phase === 'reject' ? 'rejnow' : (state.phase === 'union' ? 'tree' : 'active');
+      else if (inT.has(i)) kind = 'tree';
+      else if (st === 'rej') kind = 'rejected';
+      else if (st === 'skip') kind = 'skipped';
+      setEdge(i, kind);
+    });
 
-      const leaves = id => (children[id].length === 0 ? 1 : children[id].reduce((s, c) => s + leaves(c), 0));
-      const depthOf = id => (children[id].length === 0 ? 0 : 1 + Math.max(...children[id].map(depthOf)));
-
-      const unitW = 54;
-      const unitH = 56;
-      const radius = 15;
-      const positions = {};
-      let cursor = 0;
-      let maxDepth = 0;
-      const place = (id, depth, left) => {
-        const w = leaves(id);
-        positions[id] = { x: (left + w / 2) * unitW, y: 22 + depth * unitH };
-        let offset = left;
-        children[id].forEach(c => {
-          place(c, depth + 1, offset);
-          offset += leaves(c);
-        });
-      };
-      roots.forEach(r => {
-        place(r, 0, cursor);
-        cursor += leaves(r);
-        maxDepth = Math.max(maxDepth, depthOf(r));
-      });
-
-      const width = Math.max(cursor * unitW, unitW) + 26;
-      const height = 22 + maxDepth * unitH + 32;
-      const highlight = new Set(step.finds ? [step.finds.u, step.finds.v] : []);
-
-      let svg = `<svg class="forest-svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Union-Find forest">`;
-      nodes.forEach(n => {
-        const p = step.pai[n.id];
-        if (p !== n.id) {
-          const a = positions[n.id];
-          const b = positions[p];
-          svg += `<line class="forest-link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"></line>`;
-        }
-      });
-      nodes.forEach(n => {
-        const pos = positions[n.id];
-        const root = Core.findRootNoCompress(step.pai, n.id);
-        const colorIdx = step.colorOf[root];
-        const colorClass = colorIdx !== undefined ? `comp-${colorIdx + 1}` : '';
-        const hl = highlight.has(n.id) ? 'highlight' : '';
-        svg += `<circle class="forest-node ${colorClass} ${hl}" cx="${pos.x}" cy="${pos.y}" r="${radius}"></circle>`;
-        svg += `<text class="forest-label ${colorClass ? 'on-color' : ''}" x="${pos.x}" y="${pos.y}">${escapeHtml(n.id)}</text>`;
-        if (step.pai[n.id] === n.id) {
-          svg += `<text class="forest-rank" x="${pos.x + radius + 3}" y="${pos.y - radius + 6}">r=${step.rank[n.id]}</text>`;
-        }
-      });
-      svg += '</svg>';
-      forestView.innerHTML = svg;
-    }
-
-    function renderExplain(step) {
-      if (algo === 'prim') {
-        explainTitle.textContent = step && step.current ? `Edges scanned from u = ${step.current}` : 'Edges scanned from u';
-        if (!step) {
-          explainContent.textContent = 'Run a step to see, for each edge (u, v) with v ∈ H, the comparison w(u, v) < key[v].';
-          return;
-        }
-
-        let html = '';
-        if (step.type === 'init') {
-          html += `<p class="explain-note">Heap initialized. The first ExtractMin will return ${escapeHtml(startNode)} (key 0).</p>`;
-        } else if (step.type === 'done') {
-          html += `<p class="explain-note"><strong>Done.</strong> MST weight w(T) = ${step.total} with ${step.T.length} edges.</p>`;
-        } else if (step.checks.length === 0) {
-          html += `<p class="explain-note">u = ${escapeHtml(step.current)} was extracted. ${step.type === 'extract' ? 'Its edges to vertices still in H are scanned in the next steps.' : ''}</p>`;
-        } else {
-          html += '<table class="relaxation-table"><thead><tr><th>u</th><th>v</th><th>w(u,v)</th><th>key[v] before</th><th>result</th></tr></thead><tbody>';
-          step.checks.forEach(check => {
-            const result = check.updated
-              ? `<td class="relax-updated">key[${escapeHtml(check.v)}] ← ${check.w}, pai[${escapeHtml(check.v)}] ← ${escapeHtml(check.u)}</td>`
-              : '<td class="relax-kept">kept</td>';
-            html += `<tr><td>${escapeHtml(check.u)}</td><td>${escapeHtml(check.v)}</td><td>${check.w}</td><td>${formatValue(check.before)}</td>${result}</tr>`;
-          });
-          html += '</tbody></table>';
-        }
-
-        // Cut property: lightest edge crossing (X, V − X).
-        if (step.type !== 'done' && step.X.length > 0 && step.inHeap.length > 0) {
-          const X = new Set(step.X);
-          let best = null;
-          edges.forEach((edge, index) => {
-            const crosses = X.has(edge.source) !== X.has(edge.target);
-            if (!crosses) return;
-            if (best === null || edge.weight < edges[best].weight) best = index;
-          });
-          if (best !== null) {
-            const edge = edges[best];
-            const inside = X.has(edge.source) ? edge.source : edge.target;
-            const outside = inside === edge.source ? edge.target : edge.source;
-            html += `<p class="explain-note">Lightest edge crossing the cut (X, V − X): <strong>${escapeHtml(inside)}–${escapeHtml(outside)} (${edge.weight})</strong>.</p>`;
-          }
-        }
-        explainContent.innerHTML = html;
-      } else {
-        explainTitle.textContent = 'Edges in sorted order';
-        const order = step ? step.order : Core.kruskalSortedOrder(edges);
-        const status = step ? step.status : edges.map(() => 'pending');
-        const labels = { pending: 'pending', accepted: 'accepted', rejected: 'rejected', skipped: 'not examined' };
-        let html = '<div class="edge-chip-list">';
-        order.forEach(e => {
-          const isCurrent = step && step.currentEdge === e;
-          const st = status[e];
-          const label = isCurrent ? `current · ${labels[st]}` : labels[st];
-          html += `<span class="edge-chip ${st} ${isCurrent ? 'current' : ''}">${escapeHtml(edgeLabel(edges[e]))} · ${edges[e].weight} <small>${label}</small></span>`;
-        });
-        html += '</div>';
-        if (!step) {
-          html += '<p class="explain-note">This is the order in which Kruskal will consider the edges (stable sort by weight).</p>';
-        } else {
-          const counts = { accepted: 0, rejected: 0, pending: 0, skipped: 0 };
-          status.forEach(s => {
-            counts[s] += 1;
-          });
-          html += `<p class="explain-note">Accepted: <strong>${counts.accepted}</strong> · Rejected: <strong>${counts.rejected}</strong> · Pending: <strong>${counts.pending}</strong>${counts.skipped ? ` · Not examined: <strong>${counts.skipped}</strong>` : ''}</p>`;
-        }
-        explainContent.innerHTML = html;
-      }
-    }
-
-    function updateUI() {
-      const step = currentStep();
-      updateGraphView(step);
-      renderLegend();
-      renderPseudoCode(step);
-      if (algo === 'prim') renderPrimState(step);
-      else renderKruskalState(step);
-      renderExplain(step);
-
-      if (!step) {
-        liveBadge.textContent = 'Ready';
-        liveBadge.className = 'live-badge';
-      } else if (step.type === 'done') {
-        liveBadge.textContent = 'Done';
-        liveBadge.className = 'live-badge live-complete';
-      } else {
-        liveBadge.textContent = `Step ${stepIndex + 1}/${trace.length}`;
-        liveBadge.className = 'live-badge live-running';
-      }
-      stepBtn.disabled = !!(step && step.type === 'done');
-    }
-
-    /* --------------------------- controls ------------------------------ */
-
-    function stepAlgorithm() {
-      if (stepIndex >= trace.length - 1) {
-        stopAuto();
-        return;
-      }
-      stepIndex += 1;
-      const step = currentStep();
-      statusBanner.textContent = step.message;
-      if (step.type === 'done') stopAuto();
-      updateUI();
-    }
-
-    function toggleAuto() {
-      if (autoTimer) {
-        stopAuto();
-        return;
-      }
-      if (stepIndex >= trace.length - 1) {
-        stepIndex = -1;
-      }
-      autoBtn.textContent = 'Stop Auto';
-      autoBtn.classList.add('active');
-      stepAlgorithm();
-      autoTimer = setInterval(() => {
-        stepAlgorithm();
-      }, AUTO_RUN_DELAY_MS);
-    }
-
-    function stopAuto() {
-      if (autoTimer) {
-        clearInterval(autoTimer);
-        autoTimer = null;
-      }
-      autoBtn.textContent = 'Auto run';
-      autoBtn.classList.remove('active');
-    }
-
-    function initRandomGraph() {
-      const options = getRandomGraphOptions();
-      loadGraphDefinition(
-        Core.generateRandomGraph(options.nodeCount, options.density),
-        `Random connected graph generated (${options.nodeCount} nodes, ${options.densityPercent}% density).`
-      );
-    }
-
-    function setupBoardResizeHandle() {
-      if (!boardStack || !boardResizeHandle) return;
-
-      const minLeft = 280;
-      const minRight = 330;
-
-      const clearInlineSplitOnSmallScreens = () => {
-        if (window.matchMedia('(max-width: 1200px)').matches) {
-          boardStack.style.gridTemplateColumns = '';
-        }
-      };
-
-      clearInlineSplitOnSmallScreens();
-      window.addEventListener('resize', clearInlineSplitOnSmallScreens);
-
-      boardResizeHandle.addEventListener('pointerdown', event => {
-        if (window.matchMedia('(max-width: 1200px)').matches) return;
-
-        event.preventDefault();
-        boardResizeHandle.setPointerCapture(event.pointerId);
-        boardResizeHandle.classList.add('is-active');
-        document.body.classList.add('is-resizing');
-
-        const stackRect = boardStack.getBoundingClientRect();
-        const leftPanel = boardStack.querySelector('.main-visual-panel');
-        const handleRect = boardResizeHandle.getBoundingClientRect();
-        const initialLeft = leftPanel ? leftPanel.getBoundingClientRect().width : stackRect.width * 0.5;
-        const handleWidth = handleRect.width || 14;
-        const startX = event.clientX;
-
-        const onMove = moveEvent => {
-          const deltaX = moveEvent.clientX - startX;
-          const maxLeft = Math.max(minLeft, stackRect.width - handleWidth - minRight);
-          const nextLeft = clamp(initialLeft + deltaX, minLeft, maxLeft);
-          const nextRight = Math.max(minRight, stackRect.width - handleWidth - nextLeft);
-          boardStack.style.gridTemplateColumns = `${Math.round(nextLeft)}px ${Math.round(handleWidth)}px ${Math.round(nextRight)}px`;
-        };
-
-        const onUp = () => {
-          boardResizeHandle.classList.remove('is-active');
-          document.body.classList.remove('is-resizing');
-          window.removeEventListener('pointermove', onMove);
-          window.removeEventListener('pointerup', onUp);
-        };
-
-        window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', onUp, { once: true });
+    const colorOf = {};
+    if (state.phase !== 'input') {
+      components(state).forEach(c => {
+        if (c.length < 2) return;
+        const color = graph.order.get(c[0]) % COMP_COLORS;
+        c.forEach(id => { colorOf[id] = color; });
       });
     }
-
-    stepBtn.addEventListener('click', () => {
-      stopAuto();
-      stepAlgorithm();
+    graph.nodes.forEach(n => {
+      const d = dom.nodes[n.id];
+      const classes = ['node'];
+      if (targets.has(n.id)) classes.push(state.phase === 'reject' ? 'target rej' : 'target');
+      d.group.setAttribute('class', classes.join(' '));
+      d.halo.setAttribute('class', colorOf[n.id] === undefined ? 'halo' : `halo comp comp-${colorOf[n.id]}`);
+      d.badge.setAttribute('class', 'badge hidden');
     });
+  }
 
-    autoBtn.addEventListener('click', toggleAuto);
+  function setList(ids, fmtItem) {
+    return ids.length ? `{ ${ids.map(fmtItem).join(', ')} }` : '∅';
+  }
 
-    resetBtn.addEventListener('click', () => {
-      stopAuto();
-      stepIndex = -1;
-      statusBanner.textContent = `Reset. ${idleMessage()}`;
-      updateUI();
-    });
-
-    newGraphBtn.addEventListener('click', () => {
-      stopAuto();
-      initRandomGraph();
-    });
-
-    nodeCountInput?.addEventListener('change', () => {
-      getRandomGraphOptions();
-    });
-
-    densityRange?.addEventListener('input', updateDensityDisplay);
-
-    algorithmSelect?.addEventListener('change', () => setAlgorithm(algorithmSelect.value));
-
-    startSelect?.addEventListener('change', () => {
-      if (!nodeIndex.has(startSelect.value)) return;
-      stopAuto();
-      startNode = startSelect.value;
-      rebuildTrace();
-      updateUI();
-      syncGraphEditor();
-      statusBanner.textContent = `Start vertex set to ${startNode}. ${idleMessage()}`;
-    });
-
-    function populateExampleSelect(selectedKey) {
-      if (!exampleGraphSelect) return;
-      exampleGraphSelect.innerHTML = Object.entries(exampleGraphs)
-        .map(([key, value]) => `<option value="${key}">${escapeHtml(value.label)}</option>`)
-        .join('');
-      exampleGraphSelect.value = selectedKey;
-    }
-
-    loadExampleBtn?.addEventListener('click', () => {
-      const selected = exampleGraphSelect?.value;
-      if (!selected || !exampleGraphs[selected]) return;
-      loadGraphDefinition(exampleGraphs[selected].graph, `Loaded example: ${exampleGraphs[selected].label}.`);
-    });
-
-    applyGraphBtn?.addEventListener('click', () => {
-      try {
-        const parsed = JSON.parse(graphJsonInput.value);
-        loadGraphDefinition(parsed, 'Custom graph applied.');
-      } catch (error) {
-        statusBanner.textContent = `Could not apply graph: ${error.message}`;
-      }
-    });
-
-    exportGraphBtn?.addEventListener('click', () => {
-      syncGraphEditor();
-      statusBanner.textContent = 'Current graph exported to the JSON editor.';
-    });
-
-    graphFileInput?.addEventListener('change', async event => {
-      const file = event.target.files && event.target.files[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        loadGraphDefinition(JSON.parse(text), `Loaded graph file: ${file.name}.`);
-      } catch (error) {
-        statusBanner.textContent = `Could not load file: ${error.message}`;
-      } finally {
-        event.target.value = '';
-      }
-    });
-
-    // Modals
-    const helpBtn = document.getElementById('helpBtn');
-    const helpOverlay = document.getElementById('helpOverlay');
-    const helpCloseBtn = document.getElementById('helpCloseBtn');
-    const referencesBtn = document.getElementById('referencesBtn');
-    const referencesOverlay = document.getElementById('referencesOverlay');
-    const referencesCloseBtn = document.getElementById('referencesCloseBtn');
-
-    helpBtn.addEventListener('click', () => {
-      helpOverlay.hidden = false;
-    });
-    helpCloseBtn.addEventListener('click', () => {
-      helpOverlay.hidden = true;
-    });
-    referencesBtn.addEventListener('click', () => {
-      referencesOverlay.hidden = false;
-    });
-    referencesCloseBtn.addEventListener('click', () => {
-      referencesOverlay.hidden = true;
-    });
-    [helpOverlay, referencesOverlay].forEach(overlay => {
-      overlay.addEventListener('click', event => {
-        if (event.target === overlay) overlay.hidden = true;
-      });
-    });
-    document.addEventListener('keydown', event => {
-      if (event.key === 'Escape') {
-        helpOverlay.hidden = true;
-        referencesOverlay.hidden = true;
-      }
-    });
-
-    // Theme toggle
-    const themeToggle = document.getElementById('themeToggle');
-    const readTheme = () => {
-      try {
-        return localStorage.getItem('theme');
-      } catch (error) {
-        return null;
-      }
-    };
-    const saveTheme = value => {
-      try {
-        localStorage.setItem('theme', value);
-      } catch (error) {
-        // Storage may be unavailable (e.g. sandboxed iframe); ignore.
-      }
-    };
-    if (readTheme() === 'dark') {
-      document.body.dataset.theme = 'dark';
-    }
-    themeToggle.addEventListener('click', () => {
-      if (document.body.dataset.theme === 'dark') {
-        document.body.dataset.theme = '';
-        saveTheme('light');
-      } else {
-        document.body.dataset.theme = 'dark';
-        saveTheme('dark');
-      }
-    });
-
-    // Re-render when the graph area changes size (window resize, split handle, iframe resize).
-    const handleContainerResize = () => {
-      const { width, height } = getContainerSize();
-      if (nodes.length === 0 || (width === lastSize.width && height === lastSize.height)) return;
-      renderGraph();
-      updateGraphView(currentStep());
-    };
-    if (typeof ResizeObserver !== 'undefined') {
-      new ResizeObserver(handleContainerResize).observe(container);
+  function renderSets(state) {
+    const wT = `<div class="set set-w"><span class="set-name">w</span>(<span class="set-name">T</span>) = <b>${state.W}</b></div>`;
+    if (algo === 'prim') {
+      const inX = new Set(state.X);
+      ui.sets.innerHTML =
+        `<div class="set set-x"><span class="set-name">X</span> = ${setList(state.X, nodeRef)}</div>` +
+        `<div class="set set-rest"><span class="set-name">V − X</span> = ${setList(graph.nodes.map(n => n.id).filter(id => !inX.has(id)), nodeRef)}</div>` +
+        wT;
     } else {
-      window.addEventListener('resize', handleContainerResize);
+      ui.sets.innerHTML =
+        `<div class="set set-t"><span class="set-name">T</span> = ${setList(state.T, i => `<span class="ref">${edgeName(graph.edges[i])}</span>`)}</div>` +
+        wT;
+    }
+  }
+
+  function renderPrimSide(state) {
+    ui.sideTitle1.innerHTML = 'Fila de prioridade <i>H</i>';
+    ui.sideSub1.innerHTML = 'vértices ainda fora de <i>X</i>, ordenados por <i>key</i> (o primeiro é o mínimo)';
+    ui.sideTitle2.innerHTML = 'Tabela <i>key</i> / <i>pai</i>';
+    ui.sideSub2.innerHTML = '<i>key</i>[<i>v</i>]: custo da aresta mais barata entre <i>v</i> e <i>X</i>; <i>pai</i>[<i>v</i>]: a outra ponta dela';
+
+    if (state.phase === 'input') {
+      ui.sideBody1.innerHTML = '<div class="heap"><p class="empty">ainda não inicializada</p></div>';
+    } else {
+      const chip = (cls, v, k, title) =>
+        `<div class="${cls.join(' ')}" title="${title}"><span class="chip-id">${v}</span><span class="chip-key">${fmt(k)}</span></div>`;
+      const chips = [];
+      if (state.extracted) chips.push(chip(['chip', 'leaving'], state.extracted.v, state.extracted.k, 'extraído agora'));
+      state.H.slice()
+        .sort((a, b) => (state.key[a] - state.key[b]) || (graph.order.get(a) - graph.order.get(b)))
+        .forEach((v, i) => {
+          const cls = ['chip'];
+          if (i === 0) cls.push('min');
+          if (v === state.changed) cls.push('changed');
+          if (v === state.target && v !== state.changed) cls.push('target');
+          chips.push(chip(cls, v, state.key[v], `key[${v}] = ${fmt(state.key[v])}`));
+        });
+      ui.sideBody1.innerHTML = `<div class="heap">${chips.length ? chips.join('') : '<p class="empty">vazia</p>'}</div>`;
     }
 
-    // URL parameters: ?algo=prim|kruskal and ?example=<key>
-    const params = new URLSearchParams(window.location.search);
-    const algoParam = (params.get('algo') || '').trim().toLowerCase();
-    const exampleParam = (params.get('example') || '').trim();
-    const initialAlgo = algoParam === 'kruskal' ? 'kruskal' : 'prim';
-    const initialExample = Object.prototype.hasOwnProperty.call(exampleGraphs, exampleParam) ? exampleParam : DEFAULT_EXAMPLE;
+    const inX = new Set(state.X);
+    const started = state.phase !== 'input';
+    const rows = graph.nodes.map(n => {
+      const id = n.id;
+      const cls = [inX.has(id) ? 'in-x' : 'rest'];
+      if (id === state.wStar) cls.push('current');
+      if (id === state.changed) cls.push('changed');
+      let k = '–';
+      let p = '–';
+      let w = '';
+      if (started) {
+        k = id === state.changed
+          ? `<s>${fmt(state.old)}</s> <b>${fmt(state.key[id])}</b>`
+          : (inX.has(id) ? `<b>${fmt(state.key[id])}</b>` : fmt(state.key[id]));
+        p = state.pai[id] !== undefined ? state.pai[id] : '⊥';
+        if (state.pai[id] !== undefined) w = `${state.pai[id]}–${id}`;
+      }
+      return `<tr class="${cls.join(' ')}"><td class="col-v"><span class="dot"></span>${id}</td><td class="col-key">${k}</td><td class="col-pred">${p}</td><td class="col-path">${w}</td></tr>`;
+    }).join('');
+    ui.sideBody2.innerHTML = `<table class="dist-table"><thead><tr><th>v</th><th>key</th><th>pai</th><th>aresta</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
 
-    populateExampleSelect(initialExample);
-    updateDensityDisplay();
-    setupBoardResizeHandle();
-    setAlgorithm(initialAlgo, { announce: false });
+  function renderKruskalSide(state) {
+    ui.sideTitle1.innerHTML = 'Arestas em ordem crescente';
+    ui.sideSub1.innerHTML = '<span class="acc-text">aceitas</span> entram em <i>T</i>; <span class="rej-text">rejeitadas</span> formariam um ciclo';
+    ui.sideTitle2.innerHTML = 'Union-Find';
+    ui.sideSub2.innerHTML = 'raízes (<i>pai</i>[<i>v</i>] = <i>v</i>) representam as componentes';
 
-    // Small delay to ensure container dimensions are set
-    setTimeout(() => {
-      loadGraphDefinition(exampleGraphs[initialExample].graph, `Loaded example: ${exampleGraphs[initialExample].label}.`);
-    }, 60);
+    if (!state.sorted) {
+      ui.sideBody1.innerHTML = '<div class="edge-list"><p class="empty">ainda não ordenadas</p></div>';
+    } else {
+      ui.sideBody1.innerHTML = `<div class="edge-list">${state.sorted.map(i => {
+        const e = graph.edges[i];
+        const cls = ['echip'];
+        const st = state.status[i];
+        if (i === state.edge) cls.push(state.phase === 'reject' ? 'rej now' : (state.phase === 'union' ? 'acc now' : 'cur'));
+        else if (st === 'acc') cls.push('acc');
+        else if (st === 'rej') cls.push('rej');
+        else if (st === 'skip') cls.push('skip');
+        return `<div class="${cls.join(' ')}"><span class="chip-id">${edgeName(e)}</span><span class="chip-key">${e.w}</span></div>`;
+      }).join('')}</div>`;
+    }
+
+    const started = state.phase !== 'input';
+    const comps = started ? components(state) : [];
+    const compsLine = started
+      ? `<p class="comps">Componentes: ${comps.map(c => `{${c.join(', ')}}`).join(' ')}</p>`
+      : '';
+    const targets = new Set(state.targets);
+    const rows = graph.nodes.map(n => {
+      const id = n.id;
+      const cls = [];
+      const isRoot = started && state.pai[id] === id;
+      if (isRoot) cls.push('root');
+      if (targets.has(id)) cls.push('current');
+      const paiChanged = state.changedPai[id] !== undefined && state.changedPai[id] !== id;
+      const unionChanged = state.changedPai[id] === id;
+      if (paiChanged || unionChanged || id === state.changedRank) cls.push('changed');
+      let p = '–';
+      let rk = '–';
+      let root = '';
+      if (started) {
+        p = paiChanged ? `<s>${state.changedPai[id]}</s> <b>${state.pai[id]}</b>` : (unionChanged ? `<s>${id}</s> <b>${state.pai[id]}</b>` : state.pai[id]);
+        rk = id === state.changedRank ? `<s>${state.rank[id] - 1}</s> <b>${state.rank[id]}</b>` : state.rank[id];
+        root = isRoot ? 'raiz' : `raiz ${rootOf(state.pai, id)}`;
+      }
+      return `<tr class="${cls.join(' ')}"><td class="col-v"><span class="dot"></span>${id}</td><td class="col-key">${p}</td><td class="col-pred">${rk}</td><td class="col-path">${root}</td></tr>`;
+    }).join('');
+    ui.sideBody2.innerHTML = `${compsLine}<table class="dist-table uf-table"><thead><tr><th>v</th><th>pai</th><th>rank</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function renderPseudoPanel() {
+    ui.pseudo.innerHTML = PSEUDO[algo].map(proc =>
+      `<p class="pseudo-head">${proc.head}</p><ol class="pseudo-lines">${proc.lines.map(([id, ind, html]) =>
+        `<li data-line="${id}" class="${ind === 'meta' ? 'meta' : (ind ? `in${ind}` : '')}">${html}</li>`).join('')}</ol>`
+    ).join('');
+  }
+
+  function renderLegend() {
+    ui.legend.innerHTML = LEGEND[algo].map(([sw, text]) => `<li><span class="swatch ${sw}"></span><span>${text}</span></li>`).join('');
+  }
+
+  function render() {
+    const state = steps[current];
+    if (algo === 'prim') {
+      renderPrimGraph(state);
+      renderPrimSide(state);
+    } else {
+      renderKruskalGraph(state);
+      renderKruskalSide(state);
+    }
+    renderSets(state);
+    ui.pseudo.querySelectorAll('li[data-line]').forEach(li => {
+      li.classList.toggle('hl', state.lines.includes(li.dataset.line));
+    });
+    ui.svg.classList.toggle('pickable', algo === 'prim' && state.phase === 'input');
+    ui.message.innerHTML = state.msg;
+    ui.stepCounter.textContent = `Passo ${current} de ${steps.length - 1}`;
+    ui.progressBar.style.width = `${(100 * current) / (steps.length - 1)}%`;
+    ui.prevBtn.disabled = current === 0;
+    ui.resetBtn.disabled = current === 0;
+    ui.nextBtn.disabled = current === steps.length - 1;
+  }
+
+  // ── Interação ────────────────────────────────────────────────────────────
+
+  function goTo(index) {
+    current = Math.max(0, Math.min(steps.length - 1, index));
+    render();
+    if (current === steps.length - 1) stopAuto();
+  }
+
+  function stopAuto() {
+    if (timer) clearInterval(timer);
+    timer = null;
+    ui.autoBtn.innerHTML = '▶▶ Automático';
+    ui.autoBtn.classList.remove('active');
+  }
+
+  function startAuto() {
+    if (current === steps.length - 1) goTo(0);
+    stopAuto();
+    timer = setInterval(() => goTo(current + 1), Number(ui.speedSelect.value));
+    ui.autoBtn.innerHTML = '❚❚ Pausar';
+    ui.autoBtn.classList.add('active');
+  }
+
+  function loadGraph(d) {
+    stopAuto();
+    def = d;
+    graph = normalize(d);
+    steps = algo === 'prim' ? buildPrim(graph) : buildKruskal(graph);
+    buildGraph(graph);
+    ui.graphName.textContent = `${graph.name} · ${graph.description}`;
+    goTo(0);
+  }
+
+  function setAlgo(name) {
+    algo = name === 'kruskal' ? 'kruskal' : 'prim';
+    const label = algo === 'prim' ? 'Prim' : 'Kruskal';
+    ui.title.textContent = `Algoritmo de ${label}`;
+    document.title = `Algoritmo de ${label} · Árvore Geradora Mínima`;
+    ui.primBtn.classList.toggle('active', algo === 'prim');
+    ui.kruskalBtn.classList.toggle('active', algo === 'kruskal');
+    ui.primBtn.setAttribute('aria-pressed', String(algo === 'prim'));
+    ui.kruskalBtn.setAttribute('aria-pressed', String(algo === 'kruskal'));
+    document.body.dataset.algo = algo;
+    renderPseudoPanel();
+    renderLegend();
+    if (def) loadGraph(def);
+  }
+
+  function pickSource(id) {
+    if (algo !== 'prim' || steps[current].phase !== 'input' || id === graph.source) return;
+    loadGraph({ ...def, source: id });
+  }
+
+  function toggleMenu(open) {
+    const show = open === undefined ? ui.graphsMenu.hidden : open;
+    ui.graphsMenu.hidden = !show;
+    ui.graphsBtn.setAttribute('aria-expanded', String(show));
+  }
+
+  function togglePseudo() {
+    const show = ui.pseudoPanel.hidden;
+    ui.pseudoPanel.hidden = !show;
+    ui.layout.classList.toggle('with-pseudo', show);
+    ui.pseudoBtn.setAttribute('aria-pressed', String(show));
+    ui.pseudoBtn.classList.toggle('active', show);
+  }
+
+  EXAMPLES.forEach(ex => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'example';
+    btn.innerHTML = `<span class="example-name">${ex.name}</span><span class="example-desc">${ex.description}</span>`;
+    btn.addEventListener('click', () => { loadGraph(ex); toggleMenu(false); });
+    ui.exampleList.appendChild(btn);
   });
+
+  ui.nodeCount.addEventListener('input', () => { ui.nodeCountValue.textContent = ui.nodeCount.value; });
+  ui.randomBtn.addEventListener('click', () => {
+    const g = randomGraph(Number(ui.nodeCount.value));
+    if (g) loadGraph(g);
+    toggleMenu(false);
+  });
+
+  ui.graphsBtn.addEventListener('click', event => { event.stopPropagation(); toggleMenu(); });
+  ui.graphsMenu.addEventListener('click', event => event.stopPropagation());
+  document.addEventListener('click', () => toggleMenu(false));
+
+  ui.primBtn.addEventListener('click', () => { if (algo !== 'prim') setAlgo('prim'); });
+  ui.kruskalBtn.addEventListener('click', () => { if (algo !== 'kruskal') setAlgo('kruskal'); });
+  ui.pseudoBtn.addEventListener('click', togglePseudo);
+  ui.helpBtn.addEventListener('click', () => ui.helpDialog.showModal());
+  ui.resetBtn.addEventListener('click', () => { stopAuto(); goTo(0); });
+  ui.prevBtn.addEventListener('click', () => { stopAuto(); goTo(current - 1); });
+  ui.nextBtn.addEventListener('click', () => { stopAuto(); goTo(current + 1); });
+  ui.autoBtn.addEventListener('click', () => (timer ? stopAuto() : startAuto()));
+  ui.speedSelect.addEventListener('change', () => { if (timer) startAuto(); });
+
+  document.addEventListener('keydown', event => {
+    if (ui.helpDialog.open || event.altKey || event.ctrlKey || event.metaKey) return;
+    const tag = event.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    // Espaço/Enter num botão focado já acionam o próprio botão.
+    if (tag === 'BUTTON' && (event.key === ' ' || event.key === 'Enter')) return;
+    switch (event.key) {
+      case 'ArrowRight':
+      case ' ':
+        event.preventDefault(); stopAuto(); goTo(current + 1); break;
+      case 'ArrowLeft':
+        event.preventDefault(); stopAuto(); goTo(current - 1); break;
+      case 'Home':
+        event.preventDefault(); stopAuto(); goTo(0); break;
+      case 'End':
+        event.preventDefault(); stopAuto(); goTo(steps.length - 1); break;
+      case 'a': case 'A':
+        timer ? stopAuto() : startAuto(); break;
+      case 'p': case 'P':
+        togglePseudo(); break;
+      case 'k': case 'K':
+        setAlgo(algo === 'prim' ? 'kruskal' : 'prim'); break;
+      case 'Escape':
+        toggleMenu(false); break;
+      default:
+    }
+  });
+
+  // Parâmetros opcionais na URL, úteis para linkar a partir dos slides:
+  // ?algo=kruskal&grafo=clrs&passo=5&pseudo=1  ou  ?grafo=aleatorio&n=8
+  const params = new URLSearchParams(window.location.search);
+  const n = Math.max(4, Math.min(12, Number(params.get('n')) || 8));
+  const initial = params.get('grafo') === 'aleatorio'
+    ? randomGraph(n)
+    : EXAMPLES.find(ex => ex.id === params.get('grafo'));
+  algo = (params.get('algo') || '').trim().toLowerCase() === 'kruskal' ? 'kruskal' : 'prim';
+  def = initial || EXAMPLES[0];
+  if (params.has('origem')) def = { ...def, source: params.get('origem') };
+  setAlgo(algo);
+  if (params.has('passo')) goTo(Number(params.get('passo')) || 0);
+  if (params.get('pseudo') === '1') togglePseudo();
 })();

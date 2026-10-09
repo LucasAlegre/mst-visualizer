@@ -1,232 +1,109 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Minimum Spanning Tree Visualizer</title>
-    <meta
-      name="description"
-      content="Interactive visualization of Prim's and Kruskal's minimum spanning tree algorithms."
-    >
+    <title>Árvore Geradora Mínima: Prim e Kruskal</title>
+    <meta name="description" content="Visualização passo a passo dos algoritmos de Prim e de Kruskal para árvore geradora mínima.">
     <link rel="icon" href="data:,">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap">
     <link rel="stylesheet" href="css/styles.css">
   </head>
   <body>
-    <div class="app-bg"></div>
+    <div class="progress" aria-hidden="true"><div id="progressBar" class="progress-bar"></div></div>
+
     <header class="topbar">
-      <div class="brand-block">
-        <p class="eyebrow" id="eyebrowText">Graph Algorithms</p>
-        <h1 id="appTitle">Minimum Spanning Tree Visualizer</h1>
-        <p class="subtitle" id="appSubtitle">
-          Explore Prim's and Kruskal's algorithms.
-        </p>
+      <div class="brand">
+        <h1 id="title">Algoritmo de Prim</h1>
+        <span id="graphName" class="graph-name"></span>
       </div>
-      <div class="topbar-actions">
-        <button id="helpBtn" class="icon-btn" type="button" aria-haspopup="dialog" aria-controls="helpOverlay" aria-label="Help">?</button>
-        <button id="referencesBtn" class="icon-btn" type="button" aria-haspopup="dialog" aria-controls="referencesOverlay" aria-label="References">#</button>
-        <button id="themeToggle" class="icon-btn" type="button" aria-label="Toggle theme">☀</button>
+      <div class="top-actions">
+        <div class="algo-switch" role="group" aria-label="Algoritmo">
+          <button id="primBtn" class="btn ghost" type="button" aria-pressed="true">Prim</button>
+          <button id="kruskalBtn" class="btn ghost" type="button" aria-pressed="false">Kruskal</button>
+        </div>
+        <button id="pseudoBtn" class="btn ghost" type="button" aria-pressed="false" aria-controls="pseudoPanel">Pseudocódigo</button>
+        <div class="menu-wrap">
+          <button id="graphsBtn" class="btn ghost" type="button" aria-expanded="false" aria-controls="graphsMenu">Grafos <span aria-hidden="true">▾</span></button>
+          <div id="graphsMenu" class="menu" hidden>
+            <p class="menu-title">Exemplos</p>
+            <div id="exampleList" class="example-list"></div>
+            <hr>
+            <p class="menu-title">Grafo aleatório</p>
+            <label class="menu-field">
+              <span>Vértices</span>
+              <input id="nodeCount" type="range" min="4" max="12" value="8">
+              <output id="nodeCountValue" for="nodeCount">8</output>
+            </label>
+            <button id="randomBtn" class="btn primary block" type="button">Gerar grafo aleatório</button>
+            <p class="menu-hint">Prim: no passo inicial, clique em um vértice para escolhê-lo como origem.</p>
+          </div>
+        </div>
+        <button id="helpBtn" class="btn ghost icon" type="button" aria-label="Ajuda">?</button>
       </div>
     </header>
 
-    <main class="layout layout-top-controls split-layout" id="mainLayout">
-      <section class="panel control-panel control-panel-top settings-rail" data-pane="primary" aria-labelledby="controlsTitle">
-        <div id="settingsShell" class="settings-shell">
-          <div class="panel-header control-head">
-            <div>
-              <p class="panel-kicker" id="controlsKicker">Control panel</p>
-              <h2 id="controlsTitle">Execution Controls</h2>
-            </div>
-            <div class="status-cluster">
-              <div id="liveBadge" class="live-badge">Ready</div>
-            </div>
-          </div>
+    <main id="layout" class="layout">
+      <aside id="pseudoPanel" class="panel pseudo-panel" hidden aria-label="Pseudocódigo">
+        <h2>Pseudocódigo</h2>
+        <div id="pseudo" class="pseudo"></div>
+      </aside>
 
-          <div class="settings-stack">
-            <section class="settings-group graph-input-group">
-              <h3 class="settings-subtitle">Algorithm &amp; Graph Input</h3>
-              <div class="graph-input-split">
-                <div class="graph-input-left">
-                  <div class="field-row">
-                    <label class="field">
-                      <span>Algorithm</span>
-                      <select id="algorithmSelect">
-                        <option value="prim">Prim</option>
-                        <option value="kruskal">Kruskal</option>
-                      </select>
-                    </label>
-                    <label class="field" id="startField">
-                      <span>Start vertex (Prim)</span>
-                      <select id="startSelect"></select>
-                    </label>
-                  </div>
-                  <label class="field">
-                    <span>Example Graphs</span>
-                    <select id="exampleGraphSelect"></select>
-                  </label>
-                  <div class="toolbar graph-load-toolbar">
-                    <button id="loadExampleBtn" type="button">Load Example</button>
-                    <button id="exportGraphBtn" class="secondary" type="button">Export Current</button>
-                  </div>
-                  <label class="field">
-                    <span>Load Graph JSON File</span>
-                    <input id="graphFileInput" type="file" accept="application/json,.json">
-                  </label>
-                </div>
-                <div class="graph-input-right">
-                  <label class="field">
-                    <span>Edit / Paste Graph JSON</span>
-                    <textarea id="graphJsonInput" class="graph-json-input" spellcheck="false"></textarea>
-                  </label>
-                  <button id="applyGraphBtn" type="button">Apply JSON Graph</button>
-                </div>
-              </div>
-            </section>
-
-            <div id="statusBanner" class="status-banner compact-status" role="status" aria-live="polite">Click "Run step" to start the algorithm.</div>
-          </div>
+      <section class="stage" aria-label="Grafo">
+        <div id="sets" class="sets" aria-live="polite"></div>
+        <div class="graph-wrap">
+          <svg id="graph" class="graph" role="img" aria-label="Grafo em que o algoritmo é executado"></svg>
         </div>
+        <ul id="legend" class="legend"></ul>
       </section>
 
-      <section class="workspace">
-        <div class="board-stack split-layout" id="boardStack">
-          <section class="panel main-visual-panel" data-pane="primary">
-            <div class="graph-toolbar">
-              <div class="graph-toolbar-buttons">
-                <button id="stepBtn" type="button">Run step</button>
-                <button id="autoBtn" type="button">Auto run</button>
-                <button id="resetBtn" class="secondary" type="button">Reset</button>
-                <button id="newGraphBtn" class="secondary" type="button">New Random Graph</button>
-              </div>
-              <div class="graph-toolbar-config">
-                <label class="field compact-field">
-                  <span>Nodes</span>
-                  <input id="nodeCountInput" type="number" min="4" max="24" value="7">
-                </label>
-                <label class="field density-field">
-                  <span>Density</span>
-                  <input id="densityRange" type="range" min="10" max="90" step="5" value="40">
-                  <strong id="densityValue" class="density-value">40%</strong>
-                </label>
-              </div>
-            </div>
-            <div id="viewHost" class="view-host graph-container">
-              <svg id="edgeLayer" class="edge-layer" aria-hidden="true"></svg>
-              <!-- Nodes and edge weights are injected here -->
-            </div>
-            <section class="relaxation-panel explain-panel" aria-live="polite">
-              <div class="explain-head">
-                <h3 id="explainTitle">Step Details</h3>
-                <div id="legendRow" class="mst-legend"></div>
-              </div>
-              <div id="explainContent" class="relaxation-content">
-                Run a step to see the details of the current step.
-              </div>
-            </section>
-          </section>
-
-          <div class="resize-handle resize-handle-x"></div>
-
-          <section class="panel details-panel" aria-labelledby="detailsTitle">
-            <div class="panel-header details-header">
-              <div>
-                <p class="panel-kicker" id="detailsKicker">Supporting panels</p>
-                <h2 id="detailsTitle">Algorithm State</h2>
-              </div>
-            </div>
-            <div class="details-deck">
-              <section class="detail-pane active" data-detail-panel="state">
-                <div id="stateSummary" class="state-summary dijkstra-state-view">
-                  <div id="stateMetrics" class="state-metrics"></div>
-
-                  <div class="state-panels-grid">
-                    <section class="state-subpanel">
-                      <h3 id="tableTitle">Vertex Table</h3>
-                      <div id="stateTable" class="dist-table-wrap"></div>
-                    </section>
-
-                    <section class="state-subpanel">
-                      <h3>Pseudocode</h3>
-                      <div id="pseudoCode" class="pseudo-wrap"></div>
-                    </section>
-                  </div>
-
-                  <section id="forestPanel" class="state-subpanel forest-panel" hidden>
-                    <h3>Union-Find Forest</h3>
-                    <div id="forestView" class="forest-view"></div>
-                  </section>
-                </div>
-              </section>
-            </div>
-          </section>
-        </div>
-      </section>
+      <aside class="panel side-panel" aria-label="Estado do algoritmo">
+        <section class="side-block">
+          <h2 id="sideTitle1"></h2>
+          <p id="sideSub1" class="side-sub"></p>
+          <div id="sideBody1"></div>
+        </section>
+        <section class="side-block">
+          <h2 id="sideTitle2"></h2>
+          <p id="sideSub2" class="side-sub"></p>
+          <div id="sideBody2"></div>
+        </section>
+      </aside>
     </main>
 
-    <div id="helpOverlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle" hidden>
-      <div class="modal-card panel">
-        <div class="modal-header">
-          <h2 id="helpTitle">How to use this tool</h2>
-          <button id="helpCloseBtn" class="secondary" type="button">Close</button>
-        </div>
-        <div id="helpContent" class="modal-content">
-          <p><strong>Algorithm:</strong> Choose Prim or Kruskal. For Prim, also choose the start vertex <em>s</em>.</p>
-          <p><strong>Run step:</strong> Advance the algorithm by one step. <strong>Auto run:</strong> Run the algorithm automatically at a fixed speed. <strong>Reset:</strong> Go back to the initial state of the current graph.</p>
-          <p><strong>New Random Graph:</strong> Generate a random <em>connected</em> weighted graph using the selected node count and density (a random spanning tree plus extra edges).</p>
-          <p><strong>Graph input:</strong> Load an example, load a JSON file, or edit the JSON directly and click Apply. Nodes can be dragged in the graph view.</p>
-
-          <h3>Prim's algorithm</h3>
-          <ul>
-            <li><span class="help-swatch node-start"></span> <strong>Blue node:</strong> start vertex <em>s</em> (before it is extracted).</li>
-            <li><span class="help-swatch node-current"></span> <strong>Orange node:</strong> the vertex <em>u</em> just extracted from the heap.</li>
-            <li><span class="help-swatch node-tree"></span> <strong>Teal nodes:</strong> vertices already extracted (the set <em>X</em> covered by the tree).</li>
-            <li><span class="help-swatch node-examined"></span> <strong>Orange ring:</strong> the neighbor <em>v</em> whose key is being checked.</li>
-            <li><span class="help-line line-tree"></span> <strong>Thick teal edges:</strong> tree edges in <em>T</em>.</li>
-            <li><span class="help-line line-examining"></span> <strong>Thick orange edge:</strong> the edge (<em>u</em>, <em>v</em>) being examined.</li>
-            <li><span class="help-line line-candidate"></span> <strong>Solid purple edges:</strong> the best known connection (<em>pai</em>[<em>v</em>], <em>v</em>) of each vertex still in the heap.</li>
-            <li><span class="help-line line-cut"></span> <strong>Dashed purple edges:</strong> other edges crossing the cut (<em>X</em>, <em>V</em> − <em>X</em>).</li>
-            <li><span class="help-line line-discarded"></span> <strong>Faded dashed edges:</strong> edges with both endpoints in <em>X</em> that are not in <em>T</em> (they can no longer be chosen).</li>
-            <li>The label above each node shows <em>key</em>[<em>v</em>]. Ties in the heap are broken by smaller key, then alphabetical label.</li>
-          </ul>
-
-          <h3>Kruskal's algorithm</h3>
-          <ul>
-            <li><strong>Node colors:</strong> vertices with the same color belong to the same component (same Union-Find root). Vertices that are still alone are left uncolored.</li>
-            <li><span class="help-line line-examining"></span> <strong>Thick orange edge:</strong> the edge currently being considered.</li>
-            <li><span class="help-line line-tree"></span> <strong>Thick teal edges:</strong> accepted edges (in <em>T</em>).</li>
-            <li><span class="help-line line-rejected"></span> <strong>Faded red dashed edges:</strong> rejected edges (both endpoints already in the same component, so they would create a cycle).</li>
-            <li>The sorted edge list below the graph shows the status of each edge: pending, current, accepted, rejected, or not examined (after the tree is complete).</li>
-            <li>The Union-Find table shows <em>pai</em>[<em>v</em>] and <em>rank</em>[<em>v</em>]; the forest drawing shows the same parent pointers. Union is by rank (on ties, the root of <em>u</em> becomes the parent) and Find uses path compression. Edges are sorted by weight, keeping the input order for ties.</li>
-          </ul>
-
-          <h3>URL parameters</h3>
-          <p><code>?algo=prim</code> or <code>?algo=kruskal</code> preselects the algorithm; <code>?example=aula</code>, <code>clrs</code>, <code>ties</code> or <code>sparse</code> preselects an example graph. Both can be combined, e.g. <code>?algo=kruskal&amp;example=clrs</code>.</p>
-        </div>
+    <footer class="controls">
+      <p id="message" class="message" aria-live="polite"></p>
+      <div class="control-row">
+        <button id="resetBtn" class="btn ghost" type="button" title="Voltar ao início (Home)">⟲ Reiniciar</button>
+        <button id="prevBtn" class="btn ghost" type="button" title="Passo anterior (←)">◀ Voltar</button>
+        <button id="nextBtn" class="btn primary" type="button" title="Próximo passo (→ ou espaço)">Avançar ▶</button>
+        <button id="autoBtn" class="btn ghost" type="button" title="Execução automática (A)">▶▶ Automático</button>
+        <select id="speedSelect" class="select" aria-label="Velocidade">
+          <option value="1600">Lento</option>
+          <option value="950" selected>Normal</option>
+          <option value="450">Rápido</option>
+        </select>
+        <span id="stepCounter" class="step-counter"></span>
       </div>
-    </div>
-
-    <div id="referencesOverlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="referencesTitle" hidden>
-      <div class="modal-card panel">
-        <div class="modal-header">
-          <h2 id="referencesTitle">References</h2>
-          <button id="referencesCloseBtn" class="secondary" type="button">Close</button>
-        </div>
-        <div id="referencesContent" class="modal-content">
-          <p>Jarník, V. (1930). O jistém problému minimálním. <em>Práce Moravské Přírodovědecké Společnosti</em>, 6, 57-63.</p>
-          <p>Kruskal, J. B. (1956). On the shortest spanning subtree of a graph and the traveling salesman problem. <em>Proceedings of the American Mathematical Society</em>, 7(1), 48-50.</p>
-          <p>Prim, R. C. (1957). Shortest connection networks and some generalizations. <em>Bell System Technical Journal</em>, 36(6), 1389-1401.</p>
-          <p>Tarjan, R. E. (1975). Efficiency of a good but not linear set union algorithm. <em>Journal of the ACM</em>, 22(2), 215-225.</p>
-          <p>Kleinberg, J., &amp; Tardos, É. (2006). <em>Algorithm Design</em>. Pearson/Addison-Wesley. Sections 4.5 (The Minimum Spanning Tree Problem) and 4.6 (Implementing Kruskal's Algorithm: The Union-Find Data Structure).</p>
-          <p>Cormen, T. H., Leiserson, C. E., Rivest, R. L., &amp; Stein, C. (2009). <em>Introduction to Algorithms</em> (3rd ed.). MIT Press. Chapters 21 (Data Structures for Disjoint Sets) and 23 (Minimum Spanning Trees).</p>
-        </div>
-      </div>
-    </div>
-
-    <footer>
-      <p id="footerCredits">
-        &copy; 2026 Developed by Lucas Alegre with the support of Generative AI.
-      </p>
     </footer>
 
+    <dialog id="helpDialog" class="dialog">
+      <h2>Como usar</h2>
+      <ul>
+        <li><b>Prim / Kruskal</b> escolhe o algoritmo (tecla <kbd>K</kbd> alterna); o grafo é o mesmo nos dois.</li>
+        <li><b>Avançar / Voltar</b> executa o algoritmo um passo por vez (teclas <kbd>→</kbd> / <kbd>←</kbd> ou <kbd>espaço</kbd>).</li>
+        <li><b>Automático</b> avança sozinho (tecla <kbd>A</kbd>); <b>Reiniciar</b> volta ao início (<kbd>Home</kbd>).</li>
+        <li><b>Pseudocódigo</b> mostra a linha executada em cada passo (tecla <kbd>P</kbd>); é o mesmo dos slides.</li>
+        <li><b>Grafos</b> carrega um exemplo ou gera um grafo aleatório conexo.</li>
+        <li><b>Prim:</b> os vértices em <i>X</i> (azuis) já foram extraídos do heap <i>H</i>; o número junto de cada vértice é <i>key</i>[<i>v</i>], o custo da aresta mais barata que o liga a <i>X</i>. No passo inicial, clique em um vértice para escolhê-lo como origem <i>s</i>.</li>
+        <li><b>Kruskal:</b> as arestas são examinadas em ordem crescente de custo; a estrutura Union-Find (<i>pai</i>, <i>rank</i>) diz se as pontas estão na mesma componente. As componentes aparecem como manchas coloridas ao redor dos vértices.</li>
+      </ul>
+      <form method="dialog"><button class="btn primary" type="submit">Fechar</button></form>
+    </dialog>
+
+    <script src="js/graphs.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>
